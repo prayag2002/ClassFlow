@@ -5,6 +5,7 @@ import { CommonModule } from './common/common.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { BookingModule } from './booking/booking.module';
 import { CourseModule } from './course/course.module';
+import { DemoModule } from './demo/demo.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { CourseModule } from './course/course.module';
     CourseModule,
     TeacherModule,
     BookingModule,
+    DemoModule,
   ],
 })
 export class AppModule {}

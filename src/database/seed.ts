@@ -21,21 +21,7 @@ dotenv.config();
  *
  * Run with: npx ts-node src/database/seed.ts
  */
-async function seed() {
-  const dataSource = new DataSource({
-    type: 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    username: process.env.DB_USERNAME || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-    database: process.env.DB_NAME || 'class_booking',
-    entities: [Teacher, Course, Offering, Session, Parent, Booking],
-    synchronize: true,
-  });
-
-  await dataSource.initialize();
-  console.log('✅ Database connected');
-
+export async function runSeed(dataSource: DataSource): Promise<void> {
   // Clear existing data (in correct order due to FK constraints)
   await dataSource.getRepository(Booking).createQueryBuilder().delete().execute();
   await dataSource.getRepository(Session).createQueryBuilder().delete().execute();
@@ -214,8 +200,8 @@ async function seed() {
   const sessions4 = generateWeeklySessions(
     '2026-06-13',
     17,
-    18,
-    teacher1.timezone, // Using teacher1's timezone so they overlap at 5-6 PM ET
+    19, // Changed from 18 to 19 to overlap with Minecraft (18:00 to 19:00 EST)
+    teacher1.timezone,
     6,
   );
   for (const s of sessions4) {
@@ -276,12 +262,32 @@ async function seed() {
   console.log('   1. Book Offering MC Saturday for any parent');
   console.log('   2. Then try to book Roblox Saturday — should get 409 Conflict');
   console.log();
+}
+
+async function seed() {
+  const dataSource = new DataSource({
+    type: 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    username: process.env.DB_USERNAME || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    database: process.env.DB_NAME || 'class_booking',
+    entities: [Teacher, Course, Offering, Session, Parent, Booking],
+    synchronize: true,
+  });
+
+  await dataSource.initialize();
+  console.log('✅ Database connected');
+
+  await runSeed(dataSource);
 
   await dataSource.destroy();
   console.log('✅ Done!');
 }
 
-seed().catch((err) => {
-  console.error('❌ Seed failed:', err);
-  process.exit(1);
-});
+if (require.main === module || !process.env.NEST_RUNTIME) {
+  seed().catch((err) => {
+    console.error('❌ Seed failed:', err);
+    process.exit(1);
+  });
+}
