@@ -6,11 +6,26 @@ import {
   Body,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam, ApiResponse, ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
 import { CourseService } from './course.service';
 
-class CreateCourseDto {
+export class CreateCourseDto {
+  @ApiProperty({
+    description: 'Title of the course',
+    example: 'Introduction to Python',
+  })
+  @IsString()
+  @IsNotEmpty()
   title!: string;
+
+  @ApiProperty({
+    description: 'Description of the course',
+    example: 'Learn the basics of programming with Python.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
   description?: string;
 }
 

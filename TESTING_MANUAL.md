@@ -47,11 +47,11 @@ An interactive Single-Page Application (SPA) dashboard is served directly by the
 * **Active Parent Selection**: Switch between **Emily Chen (Tokyo JST)** and **Michael Brown (London GMT)**. Notice how available class session times automatically shift to display in their local timezone.
 * **Book Classes**: Book any available batch with a single click. The capacity slots decrement atomically, and the class appears in the parent's "Confirmed Bookings" section in their local timezone.
 * **Overlap Alert Dialog**: Try booking overlapping classes. The backend blocks it with a `409 Conflict` and displays a detailed conflict dialog showing the specific booked session and the conflicting session that caused the overlap.
-
 #### B. Teachers Management Portal
 * **Active Teacher Selection**: Switch between **Sarah Johnson (New York EST)** and **Raj Patel (India IST)**.
 * **Create Offering**: Create a new class batch (starts in DRAFT status) selecting from the available courses.
 * **Add Sessions**: Add weekly sessions to any class batch. Select dates and times in the teacher's local timezone. The backend automatically translates these to UTC before database insertion.
+* **Teacher Schedule Conflict Prevention**: Try to add a session that overlaps with any session in another offering taught by the same teacher. The backend blocks it with a `400 BadRequestException` and a descriptive error message to prevent double-booking.
 * **Publish/Cancel Offerings**: Change offering status. DRAFT offerings are not visible to parents until they have at least one session and are published.
 
 #### C. Lock Safety & Conflict Lab (Verification Sandbox)

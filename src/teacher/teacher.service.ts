@@ -140,16 +140,33 @@ export class TeacherService {
         }
       }
     }
+    // Fetch all existing sessions of this teacher's active (non-cancelled) offerings
+    const teacherSessions = await this.sessionRepo
+      .createQueryBuilder('session')
+      .innerJoinAndSelect('session.offering', 'offering')
+      .leftJoinAndSelect('offering.course', 'course')
+      .where('offering.teacherId = :teacherId', { teacherId })
+      .andWhere('offering.status != :cancelledStatus', {
+        cancelledStatus: OfferingStatus.CANCELLED,
+      })
+      .getMany();
 
-    // Check for overlaps with existing sessions in this offering
+    // Check for overlaps with other scheduled sessions
     for (let i = 0; i < newSessions.length; i++) {
-      for (const existing of offering.sessions) {
+      for (const existing of teacherSessions) {
         if (
           newSessions[i].startTime < existing.endTime &&
           newSessions[i].endTime > existing.startTime
         ) {
+          const isSameOffering = existing.offeringId === offering.id;
+          const courseTitle = existing.offering.course?.title ?? '';
+          const offeringTitle = existing.offering.title;
+          const locationText = isSameOffering
+            ? 'this offering'
+            : `offering "${courseTitle} - ${offeringTitle}"`;
+
           throw new BadRequestException(
-            `New session ${i + 1} (${dto.sessions[i].startTime} - ${dto.sessions[i].endTime}) overlaps with an existing session in this offering`,
+            `New session ${i + 1} (${dto.sessions[i].startTime} - ${dto.sessions[i].endTime}) overlaps with an existing session in ${locationText}`,
           );
         }
       }

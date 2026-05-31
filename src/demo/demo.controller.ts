@@ -1701,7 +1701,9 @@ export class DemoController {
         return res.json().then(function(data) {
           if (res.ok) {
             showToast('Successfully booked ' + title + '!', 'success');
-            loadOfferingsAndBookings();
+            loadOfferingsAndBookings().then(function() {
+              return loadTeacherOfferings();
+            });
           } else {
             if (res.status === 409) {
               showConflictDialog(data);
@@ -1813,7 +1815,8 @@ export class DemoController {
       
       // Filter bookings for offerings taught by the active teacher
       var teacherBookings = allBookings.filter(function(b) {
-        return b.offering && b.offering.teacherName === document.getElementById('teacher-profile-name').innerText;
+        var tName = b.offering && b.offering.teacher && b.offering.teacher.name;
+        return tName === document.getElementById('teacher-profile-name').innerText;
       });
 
       if (teacherBookings.length === 0) {
@@ -1832,10 +1835,12 @@ export class DemoController {
           sessionsPills += '<span class="timetable-session-badge">🕒 ' + tStart + '</span>';
         });
 
+        var cTitle = b.offering && b.offering.course && b.offering.course.title || '';
+
         row.innerHTML = '<div>' +
                           '<div class="timetable-title">👤 Student: ' + b.parent.name + ' (' + b.parent.email + ')</div>' +
                           '<div class="timetable-meta">' +
-                            '<strong>Course Class:</strong> ' + b.offering.courseName + ' - ' + b.offering.title + 
+                            '<strong>Course Class:</strong> ' + cTitle + ' - ' + b.offering.title + 
                             ' | Enrolled: ' + new Date(b.bookedAt).toLocaleDateString() +
                           '</div>' +
                           '<div class="timetable-session-badges">' + sessionsPills + '</div>' +
