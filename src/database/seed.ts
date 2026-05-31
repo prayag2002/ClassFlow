@@ -285,7 +285,7 @@ async function seed() {
   console.log('✅ Done!');
 }
 
-if (require.main === module || !process.env.NEST_RUNTIME) {
+if (require.main === module) {
   seed().catch((err) => {
     console.error('❌ Seed failed:', err);
     process.exit(1);

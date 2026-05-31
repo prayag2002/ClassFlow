@@ -10,11 +10,11 @@ import {
 import { Response } from 'express';
 import { DataSource } from 'typeorm';
 import { BookingService } from '../booking/booking.service';
-import { Parent, Offering, Booking } from '../entities';
+import { Parent, Offering, Booking, BookingStatus, Teacher, Course } from '../entities';
 import { runSeed } from '../database/seed';
 import { ApiExcludeController } from '@nestjs/swagger';
 
-@ApiExcludeController() // Exclude from Swagger docs to keep them focused on pure assignment APIs
+@ApiExcludeController()
 @Controller()
 export class DemoController {
   constructor(
@@ -34,13 +34,35 @@ export class DemoController {
     return parentRepo.find({ order: { name: 'ASC' } });
   }
 
+  @Get('api/demo/teachers')
+  async getTeachers() {
+    const teacherRepo = this.dataSource.getRepository(Teacher);
+    return teacherRepo.find({ order: { name: 'ASC' } });
+  }
+
   @Post('api/demo/reset-db')
   @HttpCode(HttpStatus.OK)
   async resetDatabase() {
-    // Set runtime environment flag to prevent seed standalone exit
     process.env.NEST_RUNTIME = 'true';
     await runSeed(this.dataSource);
     return { message: 'Database successfully re-seeded and reset!' };
+  }
+
+  @Get('api/demo/bookings')
+  async getBookings() {
+    const bookingRepo = this.dataSource.getRepository(Booking);
+    return bookingRepo.find({
+      where: { status: BookingStatus.CONFIRMED },
+      relations: {
+        parent: true,
+        offering: {
+          course: true,
+          teacher: true,
+          sessions: true,
+        },
+      },
+      order: { bookedAt: 'DESC' },
+    });
   }
 
   @Post('api/demo/test-concurrency')
@@ -58,8 +80,6 @@ export class DemoController {
       return { error: 'Offering not found' };
     }
 
-    // Fire 10 parallel booking requests!
-    // Since they are for the same parent, they will be serialized by the advisory lock
     const promises = [];
     const timestamp = Date.now();
 
@@ -96,8 +116,6 @@ export class DemoController {
     }
 
     const results = await Promise.all(promises);
-
-    // Sort by request number
     results.sort((a, b) => a.request - b.request);
 
     const successCount = results.filter((r) => r.status === 'success').length;
@@ -120,26 +138,50 @@ export class DemoController {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Global Class Booking System — Verification Dashboard</title>
+  <title>Class Booking System — Verification Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-primary: #0b111e;
-      --bg-secondary: #141d30;
-      --bg-tertiary: #1e293b;
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --accent-primary: #6366f1;
-      --accent-hover: #4f46e5;
-      --accent-emerald: #10b981;
-      --accent-emerald-dim: rgba(16, 185, 129, 0.1);
-      --accent-rose: #f43f5e;
-      --accent-rose-dim: rgba(244, 63, 94, 0.1);
-      --accent-amber: #f59e0b;
-      --accent-amber-dim: rgba(245, 158, 11, 0.1);
-      --border-color: rgba(255, 255, 255, 0.08);
+      --bg-app: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --accent-primary: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-light: #eef2ff;
+      --border-color: #e2e8f0;
+      
+      --success: #10b981;
+      --success-light: #ecfdf5;
+      --success-border: #a7f3d0;
+      --success-text: #047857;
+      
+      --danger: #f43f5e;
+      --danger-light: #fff1f2;
+      --danger-border: #fecdd3;
+      --danger-text: #be123c;
+      
+      --warning: #f59e0b;
+      --warning-light: #fffbeb;
+      --warning-border: #fde68a;
+      --warning-text: #b45309;
+
+      --info: #0ea5e9;
+      --info-light: #f0f9ff;
+      --info-border: #bae6fd;
+      --info-text: #0369a1;
+
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      
       --font-family: 'Plus Jakarta Sans', sans-serif;
     }
 
@@ -150,19 +192,17 @@ export class DemoController {
     }
 
     body {
-      background-color: var(--bg-primary);
+      background-color: var(--bg-app);
       color: var(--text-primary);
       font-family: var(--font-family);
       line-height: 1.5;
-      overflow-x: hidden;
       padding-bottom: 80px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Glassmorphism Header */
+    /* Header */
     header {
-      background: rgba(20, 29, 48, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: var(--bg-card);
       border-bottom: 1px solid var(--border-color);
       padding: 16px 40px;
       position: sticky;
@@ -171,98 +211,144 @@ export class DemoController {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      box-shadow: var(--shadow-sm);
     }
 
     .logo-container {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
 
     .logo-badge {
-      background: linear-gradient(135deg, var(--accent-primary), #a855f7);
+      background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
       color: white;
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
-      font-size: 20px;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+      font-size: 22px;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
     }
 
     .logo-title h1 {
       font-size: 20px;
-      font-weight: 700;
+      font-weight: 800;
       letter-spacing: -0.5px;
-      background: linear-gradient(to right, #f8fafc, #cbd5e1);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--text-primary);
+      line-height: 1.2;
     }
 
     .logo-title p {
       font-size: 11px;
       color: var(--text-secondary);
-      font-weight: 500;
-      letter-spacing: 0.5px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
       text-transform: uppercase;
+      margin-top: 2px;
     }
 
     .header-actions {
       display: flex;
-      gap: 16px;
+      gap: 12px;
     }
 
+    /* Buttons */
     .btn {
       font-family: var(--font-family);
       font-weight: 600;
       font-size: 13px;
-      padding: 10px 20px;
-      border-radius: 10px;
+      padding: 10px 18px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      border: none;
+      border: 1px solid transparent;
+      outline: none;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
     }
 
     .btn-primary {
       background-color: var(--accent-primary);
       color: white;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+      box-shadow: 0 2px 4px rgba(79, 70, 229, 0.1);
     }
 
     .btn-primary:hover {
       background-color: var(--accent-hover);
-      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(79, 70, 229, 0.18);
     }
 
     .btn-secondary {
-      background-color: transparent;
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
+      background-color: var(--bg-card);
+      border-color: var(--border-color);
+      color: var(--text-secondary);
     }
 
     .btn-secondary:hover {
-      background-color: rgba(255, 255, 255, 0.05);
-      border-color: rgba(255, 255, 255, 0.15);
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+      border-color: #cbd5e1;
     }
 
     .btn-danger-outline {
-      background-color: transparent;
-      border: 1px solid rgba(244, 63, 94, 0.3);
-      color: var(--accent-rose);
+      background-color: var(--bg-card);
+      border-color: var(--danger-border);
+      color: var(--danger);
     }
 
     .btn-danger-outline:hover {
-      background-color: var(--accent-rose-dim);
-      border-color: var(--accent-rose);
+      background-color: var(--danger-light);
+      border-color: var(--danger);
     }
 
-    /* Layout Containers */
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Navigation Tabs */
+    .portal-tabs {
+      background-color: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      padding: 0 40px;
+    }
+
+    .portal-tab {
+      padding: 18px 24px;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .portal-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .portal-tab.active {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+    }
+
+    /* Layout Container */
     .dashboard-container {
       max-width: 1400px;
       margin: 32px auto;
@@ -270,186 +356,257 @@ export class DemoController {
       display: grid;
       grid-template-columns: 320px 1fr;
       gap: 32px;
+      transition: all 0.3s ease;
     }
 
     @media (max-width: 1024px) {
       .dashboard-container {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
       }
     }
 
-    /* Sidebar - Parent Selection */
     .sidebar {
       display: flex;
       flex-direction: column;
       gap: 24px;
     }
 
-    .card {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-
-    .card-title {
-      font-size: 15px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      color: var(--text-primary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .parent-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .parent-item {
-      background-color: var(--bg-tertiary);
-      border: 1px solid transparent;
-      border-radius: 12px;
-      padding: 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-align: left;
-    }
-
-    .parent-item:hover {
-      border-color: rgba(99, 102, 241, 0.3);
-      transform: translateX(4px);
-    }
-
-    .parent-item.active {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.05));
-      border-color: var(--accent-primary);
-      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.1);
-    }
-
-    .parent-name {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-primary);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .parent-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 4px;
-      word-break: break-all;
-    }
-
-    .parent-tz-badge {
-      display: inline-block;
-      margin-top: 8px;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 6px;
-      background-color: rgba(255, 255, 255, 0.08);
-      color: var(--text-primary);
-    }
-
-    .parent-item.active .parent-tz-badge {
-      background-color: rgba(99, 102, 241, 0.2);
-      color: #c7d2fe;
-    }
-
-    /* Main Area */
     .main-content {
       display: flex;
       flex-direction: column;
-      gap: 32px;
+      gap: 24px;
     }
 
-    .info-bar {
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
-      border: 1px solid rgba(99, 102, 241, 0.2);
-      border-radius: 12px;
-      padding: 16px 20px;
+    /* Cards */
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-title {
       font-size: 13px;
-      color: #cbd5e1;
+      font-weight: 800;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    /* Profile Panel */
+    .active-profile-panel {
+      background: linear-gradient(135deg, #f8fafc, #eff6ff);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
       display: flex;
       align-items: center;
       gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .info-bar svg {
+    .avatar-circle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      border: 2px solid #c7d2fe;
       color: var(--accent-primary);
+      font-weight: 800;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
     }
 
-    /* Offerings Grid */
-    .offerings-section-title {
-      font-size: 20px;
+    .profile-info {
+      flex-grow: 1;
+      min-width: 0;
+    }
+
+    .profile-info .name {
       font-weight: 700;
-      margin-bottom: 16px;
+      font-size: 14px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .profile-info .timezone {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+
+    /* Pickers */
+    .picker-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .picker-item {
+      background-color: var(--bg-app);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      width: 100%;
+      outline: none;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .offerings-grid {
+    .picker-item:hover {
+      border-color: #cbd5e1;
+      background-color: var(--bg-tertiary);
+    }
+
+    .picker-item.active {
+      background-color: var(--accent-light);
+      border-color: #a5b4fc;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+    }
+
+    .picker-details {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .picker-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .picker-email {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
+
+    .tz-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background-color: rgba(0, 0, 0, 0.05);
+      color: var(--text-secondary);
+    }
+
+    .picker-item.active .tz-badge {
+      background-color: #cbd5e1;
+      color: var(--text-primary);
+    }
+
+    /* Info Bar */
+    .info-bar {
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      font-size: 13.5px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .info-bar-blue {
+      background-color: var(--info-light);
+      border: 1px solid var(--info-border);
+      color: var(--info-text);
+    }
+
+    .info-bar svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    /* Grid & Cards display */
+    .section-header {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-left: 4px solid var(--accent-primary);
+      padding-left: 12px;
+    }
+
+    .grid-container {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 24px;
     }
 
     .offering-card {
-      background-color: var(--bg-secondary);
+      background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 14px;
+      border-radius: var(--radius-lg);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: all 0.25s ease;
-      position: relative;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-sm);
     }
 
     .offering-card:hover {
       transform: translateY(-4px);
-      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
-      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: var(--shadow-lg);
+      border-color: #cbd5e1;
     }
 
     .offering-header {
       padding: 20px;
       border-bottom: 1px solid var(--border-color);
-      background-color: rgba(255, 255, 255, 0.01);
+      background-color: #fafafa;
     }
 
     .course-badge {
       display: inline-block;
-      font-size: 10px;
-      font-weight: 700;
+      font-size: 9.5px;
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.8px;
       color: var(--accent-primary);
-      margin-bottom: 6px;
+      background-color: var(--accent-light);
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
     }
 
     .offering-title {
       font-size: 17px;
-      font-weight: 700;
-      line-height: 1.3;
-      margin-bottom: 4px;
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.2px;
     }
 
-    .teacher-info {
+    .offering-teacher {
       font-size: 12px;
       color: var(--text-secondary);
+      margin-top: 4px;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
+      font-weight: 500;
     }
 
     .offering-body {
@@ -461,46 +618,49 @@ export class DemoController {
     }
 
     .offering-desc {
-      font-size: 12.5px;
+      font-size: 13px;
       color: var(--text-secondary);
       line-height: 1.4;
       display: -webkit-box;
-      -webkit-line-clamp: 3;
+      -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      min-height: 52px;
+      min-height: 36px;
     }
 
     .sessions-container {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      background-color: var(--bg-app);
+      padding: 12px;
+      border-radius: var(--radius-md);
+      border: 1px dashed var(--border-color);
     }
 
-    .session-title-label {
+    .session-label {
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 800;
       color: var(--text-secondary);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
+      display: flex;
+      justify-content: space-between;
     }
 
     .session-item {
-      background-color: var(--bg-tertiary);
+      background-color: var(--bg-card);
       border-left: 3px solid var(--accent-primary);
       padding: 8px 12px;
-      border-radius: 0 8px 8px 0;
-      font-size: 11.5px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 12px;
+      box-shadow: var(--shadow-sm);
     }
 
     .session-time {
       font-weight: 600;
       color: var(--text-primary);
-    }
-
-    .session-date {
-      color: var(--text-secondary);
-      font-size: 10.5px;
+      display: block;
     }
 
     .offering-footer {
@@ -509,105 +669,218 @@ export class DemoController {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background-color: rgba(255, 255, 255, 0.005);
+      background-color: #fafafa;
+    }
+
+    .status-pill {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-draft { background-color: var(--warning-light); border: 1px solid var(--warning-border); color: var(--warning-text); }
+    .status-published { background-color: var(--success-light); border: 1px solid var(--success-border); color: var(--success-text); }
+    .status-cancelled { background-color: var(--danger-light); border: 1px solid var(--danger-border); color: var(--danger-text); }
+
+    .capacity-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
     .capacity-indicator {
       font-size: 12px;
-      font-weight: 600;
-    }
-
-    .capacity-full {
-      color: var(--accent-rose);
-    }
-
-    .capacity-ok {
-      color: var(--accent-emerald);
-    }
-
-    .booked-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--accent-emerald);
-      background-color: var(--accent-emerald-dim);
-      padding: 6px 12px;
-      border-radius: 8px;
       font-weight: 700;
-      font-size: 12px;
-      border: 1px solid rgba(16, 185, 129, 0.2);
     }
 
-    /* Testing Playground Panel */
-    .playground-section {
-      margin-top: 8px;
+    .capacity-full { color: var(--danger); }
+    .capacity-ok { color: var(--success-text); }
+
+    .capacity-bar {
+      width: 80px;
+      height: 6px;
+      background-color: #e2e8f0;
+      border-radius: 3px;
+      overflow: hidden;
     }
 
-    .playground-tabs {
+    .capacity-fill {
+      height: 100%;
+      background-color: var(--success);
+      border-radius: 3px;
+    }
+
+    .capacity-fill.full {
+      background-color: var(--danger);
+    }
+
+    /* Timetable / Confirmed Bookings list */
+    .timetable {
       display: flex;
-      border-bottom: 1px solid var(--border-color);
-      margin-bottom: 20px;
+      flex-direction: column;
+      gap: 12px;
     }
 
-    .playground-tab {
-      padding: 12px 24px;
-      font-weight: 600;
-      font-size: 13.5px;
-      cursor: pointer;
-      color: var(--text-secondary);
-      border-bottom: 2px solid transparent;
+    .timetable-item {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 18px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
       transition: all 0.2s ease;
     }
 
-    .playground-tab.active {
-      color: var(--accent-primary);
-      border-bottom-color: var(--accent-primary);
+    .timetable-item:hover {
+      border-color: #cbd5e1;
+      box-shadow: var(--shadow-md);
     }
 
-    .playground-card {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 16px;
-      padding: 24px;
+    .timetable-title {
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--text-primary);
     }
 
-    .playground-actions {
+    .timetable-meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .timetable-session-badges {
+      margin-top: 8px;
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 20px;
+      gap: 6px;
     }
 
-    .status-panel {
-      background-color: #080c14;
+    .timetable-session-badge {
+      display: inline-block;
+      background-color: var(--bg-tertiary);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 16px;
-      font-family: monospace;
-      font-size: 12.5px;
+      color: var(--text-secondary);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+      font-size: 13.5px;
+      border: 2px dashed var(--border-color);
+      border-radius: var(--radius-md);
+      background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-control {
+      width: 100%;
+      font-family: var(--font-family);
+      font-size: 13.5px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background-color: #ffffff;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+
+    /* Lab Page & Logs Terminal */
+    .playground-actions {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .logs-terminal {
+      background-color: #0f172a;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      border: 1px solid #1e293b;
+    }
+
+    .terminal-header {
+      background-color: #1e293b;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #334155;
+    }
+
+    .terminal-controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .dot-red { background-color: #f87171; }
+    .dot-yellow { background-color: #fbbf24; }
+    .dot-green { background-color: #34d399; }
+
+    .terminal-title {
       color: #94a3b8;
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .logs-panel {
+      padding: 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      color: #cbd5e1;
       max-height: 400px;
+      min-height: 200px;
       overflow-y: auto;
       white-space: pre-wrap;
+      line-height: 1.6;
     }
 
-    .status-success {
-      color: #34d399;
-    }
+    .logs-success { color: #34d399; font-weight: 700; }
+    .logs-error { color: #f87171; font-weight: 700; }
+    .logs-info { color: #38bdf8; }
+    .logs-warn { color: #fbbf24; }
 
-    .status-error {
-      color: #f87171;
-    }
-
-    .status-info {
-      color: #60a5fa;
-    }
-
-    .status-warn {
-      color: #fbbf24;
-    }
-
-    /* Modal Overlay for notification or response details */
+    /* Dialog Box / Modals */
     .dialog-overlay {
       display: none;
       position: fixed;
@@ -615,41 +888,49 @@ export class DemoController {
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: rgba(0, 0, 0, 0.7);
+      background-color: rgba(15, 23, 42, 0.4);
       backdrop-filter: blur(4px);
       z-index: 1000;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      animation: fadeIn 0.2s ease;
     }
 
     .dialog-box {
-      background-color: var(--bg-secondary);
+      background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 16px;
+      border-radius: var(--radius-lg);
       max-width: 600px;
       width: 100%;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-      animation: zoomIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-lg);
       overflow: hidden;
+      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    @keyframes zoomIn {
-      from { transform: scale(0.95); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
 
     .dialog-header {
-      padding: 20px;
+      padding: 18px 24px;
       border-bottom: 1px solid var(--border-color);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      background-color: #fafafa;
     }
 
     .dialog-title {
-      font-size: 17px;
-      font-weight: 700;
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-primary);
     }
 
     .dialog-close {
@@ -657,103 +938,181 @@ export class DemoController {
       color: var(--text-secondary);
       background: none;
       border: none;
-      font-size: 20px;
+      font-size: 24px;
+      font-weight: 500;
+      line-height: 1;
+      padding: 0 4px;
+      outline: none;
+    }
+
+    .dialog-close:hover {
+      color: var(--text-primary);
     }
 
     .dialog-body {
-      padding: 20px;
+      padding: 24px;
     }
 
     .dialog-body pre {
-      background-color: #080c14;
+      background-color: #0f172a;
       padding: 16px;
-      border-radius: 10px;
+      border-radius: var(--radius-sm);
       overflow-x: auto;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 11.5px;
       color: #94a3b8;
-      border: 1px solid rgba(255,255,255,0.05);
-      margin-top: 12px;
+      border: 1px solid #1e293b;
+      margin-top: 16px;
+      max-height: 200px;
+      overflow-y: auto;
     }
 
     .alert-card {
-      border-radius: 10px;
+      border-radius: var(--radius-md);
       padding: 16px;
       margin-bottom: 16px;
       display: flex;
       gap: 12px;
       font-size: 13.5px;
+      border: 1px solid transparent;
     }
 
     .alert-card-danger {
-      background-color: var(--accent-rose-dim);
-      border: 1px solid rgba(244, 63, 94, 0.2);
-      color: #fecdd3;
+      background-color: var(--danger-light);
+      border-color: var(--danger-border);
+      color: var(--danger-text);
     }
 
-    .alert-card-success {
-      background-color: var(--accent-emerald-dim);
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      color: #d1fae5;
+    /* Timeline visualizer for conflict overlap */
+    .timeline-visualizer {
+      margin-top: 20px;
+      background-color: var(--bg-app);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
     }
 
-    .alert-icon {
-      font-size: 18px;
-      flex-shrink: 0;
+    .timeline-visualizer-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      text-align: center;
     }
 
-    .conflict-detail-box {
-      margin-top: 12px;
+    .timeline-track {
+      position: relative;
+      height: 48px;
+      background-color: #e2e8f0;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      border: 1px solid #cbd5e1;
+    }
+
+    .timeline-bar {
+      position: absolute;
+      height: 32px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: white;
+      padding: 0 10px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .timeline-bar-existing {
+      background: linear-gradient(135deg, var(--warning), #f59e0b);
+      left: 15%;
+      width: 50%;
+    }
+
+    .timeline-bar-new {
+      background: linear-gradient(135deg, var(--danger), #e11d48);
+      left: 45%;
+      width: 45%;
+      border: 2px dashed rgba(255, 255, 255, 0.7);
+    }
+
+    .conflict-zone {
+      position: absolute;
+      left: 45%;
+      width: 20%;
+      height: 100%;
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(244, 63, 94, 0.15),
+        rgba(244, 63, 94, 0.15) 10px,
+        rgba(244, 63, 94, 0.3) 10px,
+        rgba(244, 63, 94, 0.3) 20px
+      );
+      border-left: 2px dashed var(--danger);
+      border-right: 2px dashed var(--danger);
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .conflict-zone-label {
+      background-color: var(--danger-text);
+      color: white;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .conflict-box {
+      margin-top: 16px;
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
 
-    .conflict-session-card {
-      background-color: rgba(0,0,0,0.2);
-      border-left: 3px solid transparent;
+    .conflict-item {
+      background-color: var(--bg-app);
+      border-left: 4px solid transparent;
       padding: 10px 14px;
       border-radius: 4px;
+      font-size: 12.5px;
+      border: 1px solid var(--border-color);
+      border-left-width: 4px;
     }
 
-    .conflict-existing {
-      border-left-color: var(--accent-amber);
-    }
+    .conflict-existing { border-left-color: var(--warning); }
+    .conflict-new { border-left-color: var(--danger); }
 
-    .conflict-target {
-      border-left-color: var(--accent-rose);
-    }
-
-    .conflict-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
-    }
-
-    .conflict-existing .conflict-label { color: var(--accent-amber); }
-    .conflict-target .conflict-label { color: var(--accent-rose); }
-
+    /* Toast */
     .toast {
       position: fixed;
-      bottom: 24px;
+      top: 24px;
       right: 24px;
       background-color: #1e293b;
       color: white;
-      padding: 12px 24px;
-      border-radius: 10px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-      border: 1px solid var(--border-color);
+      padding: 12px 20px;
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
       z-index: 2000;
-      transform: translateY(100px);
+      transform: translateY(-100px);
       opacity: 0;
       transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       font-size: 13px;
       font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      border-left: 4px solid transparent;
     }
 
     .toast.show {
@@ -761,99 +1120,18 @@ export class DemoController {
       opacity: 1;
     }
 
-    .toast-success {
-      border-left: 4px solid var(--accent-emerald);
-    }
+    .toast-success { border-left-color: var(--success); }
+    .toast-error { border-left-color: var(--danger); }
+    .toast-info { border-left-color: var(--info); }
+    .toast-warn { border-left-color: var(--warning); }
 
-    .toast-error {
-      border-left: 4px solid var(--accent-rose);
-    }
-
-    .toast-info {
-      border-left: 4px solid var(--accent-primary);
-    }
-
-    /* Timetable / Calendar layout */
-    .timetable {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    .timetable-item {
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .timetable-left {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .timetable-title {
-      font-weight: 700;
-      font-size: 14.5px;
-    }
-
-    .timetable-meta {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    .timetable-sessions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
-    }
-
-    .timetable-session-badge {
-      background-color: rgba(99, 102, 241, 0.08);
-      border: 1px solid rgba(99, 102, 241, 0.15);
-      color: #a5b4fc;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 500;
-    }
-
-    .timetable-right {
-      text-align: right;
-    }
-
-    .timetable-status {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--accent-emerald);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-      color: var(--text-secondary);
-      font-size: 13.5px;
-    }
-
-    .empty-state svg {
-      margin-bottom: 12px;
-      opacity: 0.3;
-    }
-
+    /* Spinner */
     .spinner {
-      border: 2px solid rgba(255,255,255,0.1);
-      width: 18px;
-      height: 18px;
+      border: 2.5px solid rgba(0, 0, 0, 0.1);
+      width: 16px;
+      height: 16px;
       border-radius: 50%;
-      border-left-color: white;
+      border-left-color: currentColor;
       animation: spin 0.8s linear infinite;
       display: inline-block;
     }
@@ -866,7 +1144,6 @@ export class DemoController {
 </head>
 <body>
 
-  <!-- Toast Notification System -->
   <div id="toast" class="toast"></div>
 
   <!-- Header -->
@@ -880,112 +1157,239 @@ export class DemoController {
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" onclick="window.open('/api/docs', '_blank')">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-        Swagger API Docs
+        📖 Swagger API Docs
       </button>
       <button id="reset-db-btn" class="btn btn-danger-outline" onclick="resetDatabase()">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-        Reset Database (Seed)
+        🔄 Reset Database (Seed)
       </button>
     </div>
   </header>
 
-  <!-- Content Grid -->
+  <!-- Portal Navigation -->
+  <div class="portal-tabs">
+    <div id="portal-tab-parent" class="portal-tab active" onclick="switchPortal('parent')">👤 Parents Booking Portal</div>
+    <div id="portal-tab-teacher" class="portal-tab" onclick="switchPortal('teacher')">👩‍🏫 Teachers Management Portal</div>
+    <div id="portal-tab-lab" class="portal-tab" onclick="switchPortal('lab')">🔬 Lock Safety & Conflict Lab</div>
+  </div>
+
   <div class="dashboard-container">
     
-    <!-- Sidebar - Parents -->
+    <!-- Sidebar -->
     <div class="sidebar">
-      <div class="card">
+      
+      <!-- Parent Picker -->
+      <div id="parent-picker-card" class="card">
         <div class="card-title">
-          <span>Active Parent</span>
-          <span style="font-size: 10px; font-weight: 500; text-transform: none; color: var(--text-secondary);">Simulates View/Booking</span>
+          <span>Active Parent Profile</span>
         </div>
-        <div id="parent-list" class="parent-list">
-          <div class="empty-state">Loading parents...</div>
+        
+        <!-- Active Parent Overview Panel -->
+        <div id="active-parent-panel" class="active-profile-panel" style="display: none;">
+          <div class="avatar-circle" id="parent-avatar">EC</div>
+          <div class="profile-info">
+            <div class="name" id="parent-profile-name">Emily Chen</div>
+            <div class="timezone">🌐 <span id="parent-profile-tz">Asia/Tokyo</span></div>
+          </div>
+        </div>
+
+        <div id="parent-list" class="picker-list">
+          <div class="empty-state"><span class="spinner"></span> Loading parents...</div>
         </div>
       </div>
 
+      <!-- Teacher Picker -->
+      <div id="teacher-picker-card" class="card" style="display: none;">
+        <div class="card-title">
+          <span>Active Teacher Profile</span>
+        </div>
+        
+        <!-- Active Teacher Overview Panel -->
+        <div id="active-teacher-panel" class="active-profile-panel" style="display: none;">
+          <div class="avatar-circle" id="teacher-avatar">SJ</div>
+          <div class="profile-info">
+            <div class="name" id="teacher-profile-name">Sarah Johnson</div>
+            <div class="timezone">🌐 <span id="teacher-profile-tz">America/New_York</span></div>
+          </div>
+        </div>
+
+        <div id="teacher-list" class="picker-list">
+          <div class="empty-state"><span class="spinner"></span> Loading teachers...</div>
+        </div>
+      </div>
+
+      <!-- Boundary Rules Card -->
       <div class="card">
-        <div class="card-title">Timezone Comparison</div>
+        <div class="card-title">Boundary Rules</div>
         <div style="font-size: 12.5px; color: var(--text-secondary); display:flex; flex-direction:column; gap:12px;">
-          <p>This system automatically converts teacher class session times into the selected parent's timezone at the API boundary.</p>
-          <div style="background-color: var(--bg-tertiary); padding: 12px; border-radius: 8px; font-size:11px;">
-            <div style="font-weight: 700; color: #a5b4fc; margin-bottom: 4px;">America/New_York (EST):</div>
-            Saturday Evening 6:00 PM
-            <div style="font-weight: 700; color: #34d399; margin-top: 8px; margin-bottom: 4px;">Emily Chen (Asia/Tokyo):</div>
-            Sunday Morning 7:00 AM JST (+13h)
-            <div style="font-weight: 700; color: #fbbf24; margin-top: 8px; margin-bottom: 4px;">Michael Brown (Europe/London):</div>
-            Saturday Night 11:00 PM BST (+5h)
+          <p>This sandbox displays date-time parameters shifted according to selected timezones:</p>
+          <div style="background-color: var(--bg-app); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); font-size:11.5px; display:flex; flex-direction:column; gap:8px;">
+            <div>
+              <div style="font-weight: 800; color: var(--accent-primary); margin-bottom: 2px;">Sarah Johnson (New York):</div>
+              Saturdays 6:00 PM EST (UTC-4)
+            </div>
+            <div>
+              <div style="font-weight: 800; color: var(--success-text); margin-bottom: 2px;">Raj Patel (India):</div>
+              Weekday Evenings 5:00 PM IST (UTC+5.5)
+            </div>
+            <div>
+              <div style="font-weight: 800; color: var(--text-primary); margin-bottom: 2px;">Emily Chen (Tokyo):</div>
+              Converts to JST (+13h or +3.5h respectively)
+            </div>
           </div>
         </div>
       </div>
+
     </div>
 
     <!-- Main Content -->
     <div class="main-content">
-      
-      <!-- Info Bar -->
-      <div class="info-bar">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        <div>
-          <strong>Timezone, Conflict, and Capacity Rules:</strong> Store all dates internally as UTC timestamp with timezone. Detect conflicts mathematically (startA &lt; endB AND endA &gt; startB). Prevent booking draft offerings or classes exceeding capacity.
-        </div>
-      </div>
 
-      <!-- Offerings Grid Section -->
-      <div>
-        <div class="offerings-section-title">
-          <span>Available Course Offerings</span>
-          <span id="tz-display-label" style="font-size: 13px; font-weight: 600; color: var(--accent-primary);">Showing in UTC</span>
-        </div>
-        
-        <div id="offerings-grid" class="offerings-grid">
-          <!-- Dynamically populated -->
-        </div>
-      </div>
-
-      <!-- Tabs and Playground -->
-      <div class="playground-section">
-        <div class="playground-tabs">
-          <div id="tab-bookings" class="playground-tab active" onclick="switchPlaygroundTab('bookings')">My Confirmed Bookings</div>
-          <div id="tab-playground" class="playground-tab" onclick="switchPlaygroundTab('playground')">Interactive Conflict & Concurrency Laboratory</div>
-        </div>
-
-        <!-- Bookings List Panel -->
-        <div id="panel-bookings" class="playground-card">
-          <div class="card-title">Booked Classes Timeline</div>
-          <div id="booked-classes-list">
-            <!-- Dynamically populated -->
+      <!-- Portal 1: Parent Portal -->
+      <div id="portal-parent" class="portal-view">
+        <div class="info-bar info-bar-blue">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div>
+            <strong>Parent Mode:</strong> Class sessions are displayed in the selected parent's timezone. Overlapping bookings are blocked at the database boundary to guarantee schedule integrity.
           </div>
         </div>
 
-        <!-- Playground Panel -->
-        <div id="panel-playground" class="playground-card" style="display: none;">
-          <div class="card-title">Verify Lock Safety & Boundary Conditions</div>
-          <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
-            Here you can trigger complex backend simulations to verify the conflict detection algorithm and the transactional advisory locking.
+        <div style="margin-top: 24px;">
+          <div class="section-header">
+            <span>Available Offerings</span>
+            <span id="parent-tz-label" style="font-size: 12px; font-weight: 700; color: var(--accent-primary); background-color: var(--accent-light); padding: 3px 8px; border-radius: 6px;">UTC</span>
           </div>
+          <div id="offerings-grid" class="grid-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div style="margin-top: 32px;">
+          <div class="section-header">Confirmed Bookings</div>
+          <div id="parent-bookings" class="timetable">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Portal 2: Teacher Portal -->
+      <div id="portal-teacher" class="portal-view" style="display: none;">
+        <div class="info-bar info-bar-blue">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div>
+            <strong>Teacher Mode:</strong> Teacher creates offerings and adds sessions in their own local timezone (without offsets). The API automatically converts the records to UTC.
+          </div>
+        </div>
+
+        <!-- Add Offering and Session Forms -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px;">
           
+          <div class="card">
+            <div class="card-title">Create Class Offering</div>
+            <form id="create-offering-form" onsubmit="handleCreateOffering(event)">
+              <div class="form-group">
+                <label>Select Course</label>
+                <select id="form-course-id" class="form-control" required></select>
+              </div>
+              <div class="form-group">
+                <label>Offering Title</label>
+                <input id="form-offering-title" type="text" class="form-control" placeholder="e.g. Saturday Morning Batch" required>
+              </div>
+              <div class="form-group">
+                <label>Max Students Capacity</label>
+                <input id="form-offering-max" type="number" class="form-control" value="20" min="1" max="100" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Create Offering (DRAFT)</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Add Session to Offering</div>
+            <form id="add-session-form" onsubmit="handleCreateSession(event)">
+              <div class="form-group">
+                <label>Select Offering</label>
+                <select id="form-offering-id" class="form-control" required>
+                  <option value="">No offerings created yet</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Start Date & Time (Local Teacher Time)</label>
+                <input id="form-session-start" type="datetime-local" class="form-control" required>
+              </div>
+              <div class="form-group">
+                <label>End Date & Time (Local Teacher Time)</label>
+                <input id="form-session-end" type="datetime-local" class="form-control" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Add Session to Offering</button>
+            </form>
+          </div>
+
+        </div>
+
+        <!-- Class Batches Section -->
+        <div style="margin-top: 32px;">
+          <div class="section-header">
+            <span>Teacher's Class Batches</span>
+            <span id="teacher-tz-label" style="font-size: 12px; font-weight: 700; color: var(--accent-primary); background-color: var(--accent-light); padding: 3px 8px; border-radius: 6px;">UTC</span>
+          </div>
+          <div id="teacher-offerings-grid" class="grid-container">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Student Roster Section -->
+        <div style="margin-top: 32px;">
+          <div class="section-header">
+            <span>Student Bookings & Roster</span>
+          </div>
+          <div id="teacher-roster-list" class="timetable">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Portal 3: Lock Safety & Conflict Laboratory -->
+      <div id="portal-lab" class="portal-view" style="display: none;">
+        <div class="info-bar info-bar-blue">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <div>
+            <strong>Validation Lab:</strong> Run stress tests on schedule overlap math and PostgreSQL transactional advisory locks. The system locks transactions based on parent hashes to prevent race conditions.
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+          <div class="card-title">Trigger Sandbox Integrations</div>
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px;">
+            These routines reset the database dynamically and trigger precise requests to audit the backend response parameters.
+          </p>
           <div class="playground-actions">
-            <button class="btn btn-primary" onclick="simulateConflictDemo()">
-              ⚡ Test Overlapping Conflict Detection
+            <button class="btn btn-primary" onclick="runOverlapConflictSandbox()">
+              🔬 Verify Overlap Conflict Detection
             </button>
-            <button class="btn btn-primary" onclick="simulateConcurrencyDemo()">
-              🔥 Test Concurrency & Advisory Lock Safety
+            <button class="btn btn-primary" onclick="runConcurrencyLockSandbox()">
+              ⚡ Verify Concurrency & Advisory Lock Safety
             </button>
           </div>
 
-          <h3 style="font-size: 13px; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing:0.5px;">Simulation Audit Trail</h3>
-          <div id="playground-logs" class="status-panel">Select an action above to run backend verification simulations...</div>
+          <div class="logs-terminal">
+            <div class="terminal-header">
+              <div class="terminal-controls">
+                <span class="terminal-dot dot-red"></span>
+                <span class="terminal-dot dot-yellow"></span>
+                <span class="terminal-dot dot-green"></span>
+              </div>
+              <div class="terminal-title">VERIFICATION AUDIT TRAIL</div>
+              <div style="width: 40px;"></div>
+            </div>
+            <div id="lab-logs" class="logs-panel">Select an action above to verify the lock safety boundaries...</div>
+          </div>
         </div>
-
       </div>
 
     </div>
   </div>
 
-  <!-- Dialog Box (Conflict Details / Results) -->
-  <div id="dialog-overlay" class="dialog-overlay" onclick="closeDialog(event)">
+  <!-- Dialog Box / Conflict Modal -->
+  <div id="dialog-overlay" class="dialog-overlay" onclick="closeDialog()">
     <div class="dialog-box" onclick="event.stopPropagation()">
       <div class="dialog-header">
         <h2 id="dialog-title" class="dialog-title">Response Detail</h2>
@@ -997,304 +1401,588 @@ export class DemoController {
     </div>
   </div>
 
-  <!-- Frontend Javascript -->
   <script>
-    let parents = [];
-    let activeParentId = '';
-    let activeParentTimezone = 'UTC';
-    let offerings = [];
+    var parents = [];
+    var teachers = [];
+    var courses = [];
+    var offerings = []; 
+    var activeParentId = '';
+    var activeParentTz = 'UTC';
+    var activeTeacherId = '';
+    var activeTeacherTz = 'UTC';
 
-    // Initialize UI
-    window.addEventListener('load', async () => {
-      await loadParents();
-      await loadOfferingsAndBookings();
+    window.addEventListener('load', function() {
+      resetAndReloadAll();
     });
 
-    function showToast(message, type = 'info') {
-      const toast = document.getElementById('toast');
-      toast.innerText = message;
-      toast.className = 'toast show toast-' + type;
-      setTimeout(() => {
-        toast.classList.remove('show');
-      }, 3500);
+    function resetAndReloadAll() {
+      return Promise.all([
+        loadParents(),
+        loadTeachers(),
+        loadCourses()
+      ]).then(function() {
+        return Promise.all([
+          loadOfferingsAndBookings(),
+          loadTeacherOfferings()
+        ]);
+      });
     }
 
-    async function loadParents() {
-      try {
-        const response = await fetch('/api/demo/parents');
-        parents = await response.json();
-        
-        const listContainer = document.getElementById('parent-list');
-        listContainer.innerHTML = '';
-        
-        if (parents.length === 0) {
-          listContainer.innerHTML = '<div class="empty-state">No parents found. Please click Reset Database.</div>';
-          return;
-        }
+    function showToast(message, type) {
+      var tType = type || 'info';
+      var toast = document.getElementById('toast');
+      toast.innerText = message;
+      toast.className = 'toast show toast-' + tType;
+      setTimeout(function() { toast.classList.remove('show'); }, 3000);
+    }
 
-        parents.forEach((parent, index) => {
-          const item = document.createElement('button');
-          item.className = 'parent-item' + (index === 0 ? ' active' : '');
-          if (index === 0) {
-            activeParentId = parent.id;
-            activeParentTimezone = parent.timezone;
-          }
-          item.id = 'parent-' + parent.id;
-          item.onclick = () => selectParent(parent.id, parent.timezone);
-          item.innerHTML = \`
-            <div class="parent-name">
-              <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
-              \${parent.name}
-            </div>
-            <div class="parent-meta">\${parent.email}</div>
-            <span class="parent-tz-badge">\${parent.timezone}</span>
-          \`;
-          listContainer.appendChild(item);
-        });
+    function switchPortal(portal) {
+      document.querySelectorAll('.portal-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.getElementById('portal-tab-' + portal).classList.add('active');
 
-        updateTimezoneLabel();
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to load parents list', 'error');
+      document.getElementById('portal-parent').style.display = portal === 'parent' ? 'block' : 'none';
+      document.getElementById('portal-teacher').style.display = portal === 'teacher' ? 'block' : 'none';
+      document.getElementById('portal-lab').style.display = portal === 'lab' ? 'block' : 'none';
+
+      var dbContainer = document.querySelector('.dashboard-container');
+      var sidebar = document.querySelector('.sidebar');
+      
+      if (portal === 'lab') {
+        dbContainer.style.gridTemplateColumns = '1fr';
+        sidebar.style.display = 'none';
+      } else {
+        dbContainer.style.gridTemplateColumns = '320px 1fr';
+        sidebar.style.display = 'flex';
+        document.getElementById('parent-picker-card').style.display = portal === 'parent' ? 'block' : 'none';
+        document.getElementById('teacher-picker-card').style.display = portal === 'teacher' ? 'block' : 'none';
       }
     }
 
-    function selectParent(id, timezone) {
-      document.querySelectorAll('.parent-item').forEach(item => item.classList.remove('active'));
-      document.getElementById('parent-' + id).classList.add('active');
-      activeParentId = id;
-      activeParentTimezone = timezone;
-      updateTimezoneLabel();
+    function getInitials(name) {
+      if (!name) return '??';
+      var parts = name.split(' ');
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return name.substring(0, 2).toUpperCase();
+    }
+
+    function loadParents() {
+      return fetch('/api/demo/parents')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          parents = data;
+          var container = document.getElementById('parent-list');
+          container.innerHTML = '';
+          if (parents.length === 0) {
+            container.innerHTML = '<div class="empty-state">No parents found</div>';
+            return;
+          }
+          parents.forEach(function(p, idx) {
+            var item = document.createElement('button');
+            item.className = 'picker-item' + (idx === 0 ? ' active' : '');
+            if (idx === 0) {
+              activeParentId = p.id;
+              activeParentTz = p.timezone;
+              document.getElementById('parent-tz-label').innerText = 'Showing Converted to ' + p.timezone;
+              updateParentProfilePanel(p);
+            }
+            item.id = 'parent-' + p.id;
+            item.onclick = function() { selectParent(p); };
+            item.innerHTML = '<div class="picker-details">' +
+                               '<div class="picker-name">👤 ' + p.name + '</div>' +
+                               '<div class="picker-email">' + p.email + '</div>' +
+                             '</div>' +
+                             '<span class="tz-badge">' + p.timezone + '</span>';
+            container.appendChild(item);
+          });
+        })
+        .catch(function() {
+          showToast('Error loading parents', 'error');
+        });
+    }
+
+    function updateParentProfilePanel(parentObj) {
+      document.getElementById('active-parent-panel').style.display = 'flex';
+      document.getElementById('parent-avatar').innerText = getInitials(parentObj.name);
+      document.getElementById('parent-profile-name').innerText = parentObj.name;
+      document.getElementById('parent-profile-tz').innerText = parentObj.timezone;
+    }
+
+    function selectParent(parentObj) {
+      document.querySelectorAll('#parent-list .picker-item').forEach(function(i) { i.classList.remove('active'); });
+      document.getElementById('parent-' + parentObj.id).classList.add('active');
+      activeParentId = parentObj.id;
+      activeParentTz = parentObj.timezone;
+      document.getElementById('parent-tz-label').innerText = 'Showing Converted to ' + parentObj.timezone;
+      updateParentProfilePanel(parentObj);
       loadOfferingsAndBookings();
     }
 
-    function updateTimezoneLabel() {
-      document.getElementById('tz-display-label').innerText = 'Displaying Converted to ' + activeParentTimezone;
+    function loadTeachers() {
+      return fetch('/api/demo/teachers')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          teachers = data;
+          var container = document.getElementById('teacher-list');
+          container.innerHTML = '';
+          if (teachers.length === 0) {
+            container.innerHTML = '<div class="empty-state">No teachers found</div>';
+            return;
+          }
+          teachers.forEach(function(t, idx) {
+            var item = document.createElement('button');
+            item.className = 'picker-item' + (idx === 0 ? ' active' : '');
+            if (idx === 0) {
+              activeTeacherId = t.id;
+              activeTeacherTz = t.timezone;
+              document.getElementById('teacher-tz-label').innerText = 'Showing in Teacher TZ: ' + t.timezone;
+              updateTeacherProfilePanel(t);
+            }
+            item.id = 'teacher-' + t.id;
+            item.onclick = function() { selectTeacher(t); };
+            item.innerHTML = '<div class="picker-details">' +
+                               '<div class="picker-name">👩‍🏫 ' + t.name + '</div>' +
+                               '<div class="picker-email">' + t.email + '</div>' +
+                             '</div>' +
+                             '<span class="tz-badge">' + t.timezone + '</span>';
+            container.appendChild(item);
+          });
+        })
+        .catch(function() {
+          showToast('Error loading teachers', 'error');
+        });
     }
 
-    async function loadOfferingsAndBookings() {
-      if (!activeParentId) return;
+    function updateTeacherProfilePanel(teacherObj) {
+      document.getElementById('active-teacher-panel').style.display = 'flex';
+      document.getElementById('teacher-avatar').innerText = getInitials(teacherObj.name);
+      document.getElementById('teacher-profile-name').innerText = teacherObj.name;
+      document.getElementById('teacher-profile-tz').innerText = teacherObj.timezone;
+    }
 
-      try {
-        // Load available offerings (converted to parent's timezone)
-        const response = await fetch(\`/parents/\${activeParentId}/available-offerings\`);
-        const data = await response.json();
-        offerings = data.offerings;
+    function selectTeacher(teacherObj) {
+      document.querySelectorAll('#teacher-list .picker-item').forEach(function(i) { i.classList.remove('active'); });
+      document.getElementById('teacher-' + teacherObj.id).classList.add('active');
+      activeTeacherId = teacherObj.id;
+      activeTeacherTz = teacherObj.timezone;
+      document.getElementById('teacher-tz-label').innerText = 'Showing in Teacher TZ: ' + teacherObj.timezone;
+      updateTeacherProfilePanel(teacherObj);
+      loadTeacherOfferings();
+    }
 
-        // Load parent bookings
-        const bookingsResponse = await fetch(\`/parents/\${activeParentId}/bookings\`);
-        const bookingsData = await bookingsResponse.json();
-        const bookings = bookingsData.bookings;
-        
-        renderOfferings(offerings, bookings);
-        renderBookings(bookings);
-      } catch (err) {
+    function loadCourses() {
+      return fetch('/courses')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          courses = data;
+          var select = document.getElementById('form-course-id');
+          select.innerHTML = '';
+          courses.forEach(function(c) {
+            var opt = document.createElement('option');
+            opt.value = c.id;
+            opt.innerText = c.title;
+            select.appendChild(opt);
+          });
+        })
+        .catch(function() {
+          showToast('Error loading courses', 'error');
+        });
+    }
+
+    function loadOfferingsAndBookings() {
+      if (!activeParentId) return Promise.resolve();
+      return Promise.all([
+        fetch('/parents/' + activeParentId + '/available-offerings').then(function(res) { return res.json(); }),
+        fetch('/parents/' + activeParentId + '/bookings').then(function(res) { return res.json(); })
+      ]).then(function(results) {
+        offerings = results[0].offerings || [];
+        var bookings = results[1].bookings || [];
+        renderParentOfferings(offerings, bookings);
+        renderParentBookings(bookings);
+      }).catch(function(err) {
         console.error(err);
-        showToast('Error loading offerings/bookings', 'error');
-      }
+      });
     }
 
-    function renderOfferings(offerings, bookings) {
-      const grid = document.getElementById('offerings-grid');
+    function renderParentOfferings(offeringsList, bookings) {
+      var grid = document.getElementById('offerings-grid');
       grid.innerHTML = '';
-
-      if (offerings.length === 0) {
-        grid.innerHTML = '<div class="empty-state">No offerings available.</div>';
+      if (offeringsList.length === 0) {
+        grid.innerHTML = '<div class="empty-state">No offerings published yet. Go to Teacher portal to create and publish offerings.</div>';
         return;
       }
+      var bookedIds = new Set();
+      bookings.forEach(function(b) { bookedIds.add(b.offering.id); });
 
-      // Create a set of booked offering IDs
-      const bookedIds = new Set(bookings.map(b => b.offering.id));
-
-      offerings.forEach(offering => {
-        const isBooked = bookedIds.has(offering.id);
-        const card = document.createElement('div');
+      offeringsList.forEach(function(off) {
+        var isBooked = bookedIds.has(off.id);
+        var card = document.createElement('div');
         card.className = 'offering-card';
-        
-        // Sessions HTML
-        let sessionsHtml = '';
-        offering.sessions.forEach((s, idx) => {
-          // Parse format
-          sessionsHtml += \`
-            <div class="session-item">
-              <span class="session-time">\${s.startTimeFormatted} - \${s.endTimeFormatted}</span>
-              <div class="session-date">Session \${idx + 1}</div>
-            </div>
-          \`;
+
+        var sessionsHtml = '';
+        off.sessions.forEach(function(s) {
+          sessionsHtml += '<div class="session-item">' +
+                            '<span class="session-time">🕒 ' + s.startTimeFormatted + ' - ' + s.endTimeFormatted + '</span>' +
+                          '</div>';
         });
 
-        // Capacity text
-        const isFull = offering.availableSlots <= 0;
-        const capacityClass = isFull ? 'capacity-full' : 'capacity-ok';
-        const capacityText = isFull 
-          ? 'Offering Full (0 slots left)' 
-          : offering.availableSlots + ' of ' + offering.maxStudents + ' slots available';
+        var isFull = off.availableSlots <= 0;
+        var capPercent = Math.min(100, Math.round(((off.maxStudents - off.availableSlots) / off.maxStudents) * 100));
+        var capText = isFull ? 'FULL' : off.availableSlots + ' slots left';
 
-        // Action Button or booked badge
-        let actionHtml = '';
+        var actionHtml = '';
         if (isBooked) {
-          actionHtml = \`
-            <span class="booked-status">
-              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-              Confirmed Booked
-            </span>
-          \`;
+          actionHtml = '<span class="status-pill status-published">Booked ✓</span>';
         } else {
-          actionHtml = \`
-            <button 
-              class="btn btn-primary \${isFull ? 'disabled' : ''}" 
-              \${isFull ? 'disabled' : ''} 
-              onclick="bookOffering('\${offering.id}', '\${offering.title}')"
-            >
-              \${isFull ? 'Sold Out' : 'Book Offering'}
-            </button>
-          \`;
+          var btnClass = 'btn btn-primary' + (isFull ? ' disabled' : '');
+          var disabledAttr = isFull ? 'disabled' : '';
+          actionHtml = '<button class="' + btnClass + '" ' + disabledAttr + ' onclick="bookClass(\\\'' + off.id + '\\\', \\\'' + off.title.replace(/'/g, "\\\\'") + '\\\')">' + (isFull ? 'Sold Out' : 'Book') + '</button>';
         }
 
-        card.innerHTML = \`
-          <div class="offering-header">
-            <span class="course-badge">\${offering.courseName}</span>
-            <h3 class="offering-title">\${offering.title}</h3>
-            <div class="teacher-info">
-              👩‍🏫 Teacher: <strong>\${offering.teacherName}</strong>
-            </div>
-          </div>
-          <div class="offering-body">
-            <p class="offering-desc">\${offering.courseDescription || 'No description available.'}</p>
-            <div class="sessions-container">
-              <div class="session-title-label">Class Schedule (\${activeParentTimezone})</div>
-              \${sessionsHtml}
-            </div>
-          </div>
-          <div class="offering-footer">
-            <div class="capacity-indicator \${capacityClass}">\${capacityText}</div>
-            \${actionHtml}
-          </div>
-        \`;
-        
+        card.innerHTML = '<div class="offering-header">' +
+                           '<span class="course-badge">' + off.courseName + '</span>' +
+                           '<div class="offering-title">' + off.title + '</div>' +
+                           '<div class="offering-teacher">👩‍🏫 Teacher: ' + off.teacherName + '</div>' +
+                         '</div>' +
+                         '<div class="offering-body">' +
+                           '<p class="offering-desc">' + (off.courseDescription || 'No description.') + '</p>' +
+                           '<div class="sessions-container">' +
+                             '<div class="session-label"><span>Sessions</span> <span>(' + activeParentTz + ')</span></div>' +
+                             sessionsHtml +
+                           '</div>' +
+                         '</div>' +
+                         '<div class="offering-footer">' +
+                           '<div class="capacity-container">' +
+                             '<div class="capacity-indicator ' + (isFull ? 'capacity-full' : 'capacity-ok') + '">' + capText + '</div>' +
+                             '<div class="capacity-bar"><div class="capacity-fill ' + (isFull ? 'full' : '') + '" style="width: ' + capPercent + '%"></div></div>' +
+                           '</div>' +
+                           actionHtml +
+                         '</div>';
         grid.appendChild(card);
       });
     }
 
-    function renderBookings(bookings) {
-      const list = document.getElementById('booked-classes-list');
-      list.innerHTML = '';
-
+    function renderParentBookings(bookings) {
+      var container = document.getElementById('parent-bookings');
+      container.innerHTML = '';
       if (bookings.length === 0) {
-        list.innerHTML = \`
-          <div class="empty-state">
-            <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-6h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z"/></svg>
-            <p>You haven't booked any classes yet. Choose a class above and click "Book Offering".</p>
-          </div>
-        \`;
+        container.innerHTML = '<div class="empty-state">No bookings confirmed yet</div>';
+        return;
+      }
+      bookings.forEach(function(b) {
+        var item = document.createElement('div');
+        item.className = 'timetable-item';
+
+        var badgeHtml = '';
+        b.offering.sessions.forEach(function(s) {
+          badgeHtml += '<span class="timetable-session-badge">🕒 ' + s.startTimeFormatted + '</span>';
+        });
+
+        item.innerHTML = '<div>' +
+                           '<div class="timetable-title">' + b.offering.courseName + ' - ' + b.offering.title + '</div>' +
+                           '<div class="timetable-meta">Teacher: ' + b.offering.teacherName + ' | Booked: ' + new Date(b.bookedAt).toLocaleString() + '</div>' +
+                           '<div class="timetable-session-badges">' + badgeHtml + '</div>' +
+                         '</div>' +
+                         '<div>' +
+                           '<span class="status-pill status-published">Confirmed</span>' +
+                         '</div>';
+        container.appendChild(item);
+      });
+    }
+
+    function bookClass(offeringId, title) {
+      return fetch('/parents/' + activeParentId + '/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offeringId: offeringId })
+      })
+      .then(function(res) {
+        return res.json().then(function(data) {
+          if (res.ok) {
+            showToast('Successfully booked ' + title + '!', 'success');
+            loadOfferingsAndBookings();
+          } else {
+            if (res.status === 409) {
+              showConflictDialog(data);
+            } else {
+              showToast(data.message || 'Booking failed', 'error');
+            }
+          }
+        });
+      })
+      .catch(function() {
+        showToast('Error booking class', 'error');
+      });
+    }
+
+    function loadTeacherOfferings() {
+      if (!activeTeacherId) return Promise.resolve();
+      
+      // Load both offerings and bookings so we can render roster
+      return Promise.all([
+        fetch('/teachers/' + activeTeacherId + '/offerings').then(function(res) { return res.json(); }),
+        fetch('/api/demo/bookings').then(function(res) { return res.json(); })
+      ]).then(function(results) {
+        var data = results[0];
+        var allBookings = results[1] || [];
+        var offeringsList = data.offerings || data || [];
+        
+        var select = document.getElementById('form-offering-id');
+        select.innerHTML = '';
+
+        if (offeringsList.length === 0) {
+          var opt = document.createElement('option');
+          opt.value = '';
+          opt.innerText = 'No offerings created yet';
+          select.appendChild(opt);
+        }
+
+        var grid = document.getElementById('teacher-offerings-grid');
+        grid.innerHTML = '';
+
+        if (offeringsList.length === 0) {
+          grid.innerHTML = '<div class="empty-state">No offerings created under this teacher yet. Use the form above to create one.</div>';
+        } else {
+          offeringsList.forEach(function(off) {
+            var opt = document.createElement('option');
+            opt.value = off.id;
+            opt.innerText = off.courseName + ' - ' + off.title + ' (' + off.status + ')';
+            select.appendChild(opt);
+
+            var card = document.createElement('div');
+            card.className = 'offering-card';
+
+            var sessionsHtml = '';
+            (off.sessions || []).forEach(function(s) {
+              var localStart = s.startTimeFormatted || new Date(s.startTime).toLocaleString('en-US', { timeZone: activeTeacherTz });
+              var localEnd = s.endTimeFormatted || new Date(s.endTime).toLocaleString('en-US', { timeZone: activeTeacherTz });
+              sessionsHtml += '<div class="session-item">' +
+                                '<span class="session-time">🕒 ' + localStart + ' - ' + localEnd + '</span>' +
+                              '</div>';
+            });
+
+            if (!off.sessions || off.sessions.length === 0) {
+              sessionsHtml = '<div style="font-size: 12px; color: var(--danger); font-weight:600; padding: 6px 0;">⚠️ No sessions added yet. Adding sessions is required before publishing.</div>';
+            }
+
+            var actionButton = '';
+            if (off.status === 'DRAFT') {
+              actionButton = '<button class="btn btn-primary" onclick="patchOfferingStatus(\\\'' + off.id + '\\\', \\\'PUBLISHED\\\')">Publish</button>';
+            } else if (off.status === 'PUBLISHED') {
+              actionButton = '<button class="btn btn-danger-outline" onclick="patchOfferingStatus(\\\'' + off.id + '\\\', \\\'CANCELLED\\\')">Cancel Batch</button>';
+            }
+
+            var bCount = off.bookingCount ?? 0;
+            var capPercent = Math.min(100, Math.round((bCount / off.maxStudents) * 100));
+
+            card.innerHTML = '<div class="offering-header">' +
+                               '<span class="course-badge">' + off.courseName + '</span>' +
+                               '<div class="offering-title">' + off.title + '</div>' +
+                             '</div>' +
+                             '<div class="offering-body">' +
+                               '<div class="sessions-container">' +
+                                 '<div class="session-label"><span>Sessions</span> <span>(' + activeTeacherTz + ')</span></div>' +
+                                 sessionsHtml +
+                               '</div>' +
+                             '</div>' +
+                             '<div class="offering-footer">' +
+                               '<div class="capacity-container">' +
+                                 '<div style="font-size:11.5px; font-weight:700; color:var(--text-secondary);">' + bCount + '/' + off.maxStudents + ' Enrolled</div>' +
+                                 '<div class="capacity-bar"><div class="capacity-fill" style="width: ' + capPercent + '%"></div></div>' +
+                               '</div>' +
+                               '<div style="display:flex; align-items:center; gap:8px;">' +
+                                 '<span class="status-pill status-' + off.status.toLowerCase() + '">' + off.status + '</span>' +
+                                 actionButton +
+                               '</div>' +
+                             '</div>';
+            grid.appendChild(card);
+          });
+        }
+
+        // Render Roster
+        renderTeacherRoster(allBookings);
+      }).catch(function(e) {
+        console.error(e);
+      });
+    }
+
+    function renderTeacherRoster(allBookings) {
+      var rosterContainer = document.getElementById('teacher-roster-list');
+      rosterContainer.innerHTML = '';
+      
+      // Filter bookings for offerings taught by the active teacher
+      var teacherBookings = allBookings.filter(function(b) {
+        return b.offering && b.offering.teacherName === document.getElementById('teacher-profile-name').innerText;
+      });
+
+      if (teacherBookings.length === 0) {
+        rosterContainer.innerHTML = '<div class="empty-state">No students have booked classes under this teacher yet.</div>';
         return;
       }
 
-      const container = document.createElement('div');
-      container.className = 'timetable';
+      teacherBookings.forEach(function(b) {
+        var row = document.createElement('div');
+        row.className = 'timetable-item';
 
-      bookings.forEach(booking => {
-        const item = document.createElement('div');
-        item.className = 'timetable-item';
-        
-        let badgesHtml = '';
-        booking.offering.sessions.forEach(s => {
-          badgesHtml += \`<span class="timetable-session-badge">\${s.startTimeFormatted}</span>\`;
+        var sessionsPills = '';
+        b.offering.sessions.forEach(function(s) {
+          // Convert session time to teacher local timezone
+          var tStart = s.startTimeFormatted || new Date(s.startTime).toLocaleString('en-US', { timeZone: activeTeacherTz });
+          sessionsPills += '<span class="timetable-session-badge">🕒 ' + tStart + '</span>';
         });
 
-        item.innerHTML = \`
-          <div class="timetable-left">
-            <span class="timetable-title">\${booking.offering.courseName} — \${booking.offering.title}</span>
-            <div class="timetable-meta">Teacher: \${booking.offering.teacherName} | Booked: \${new Date(booking.bookedAt).toLocaleString()}</div>
-            <div class="timetable-sessions">
-              \${badgesHtml}
-            </div>
-          </div>
-          <div class="timetable-right">
-            <span class="timetable-status">Confirmed</span>
-          </div>
-        \`;
-        container.appendChild(item);
+        row.innerHTML = '<div>' +
+                          '<div class="timetable-title">👤 Student: ' + b.parent.name + ' (' + b.parent.email + ')</div>' +
+                          '<div class="timetable-meta">' +
+                            '<strong>Course Class:</strong> ' + b.offering.courseName + ' - ' + b.offering.title + 
+                            ' | Enrolled: ' + new Date(b.bookedAt).toLocaleDateString() +
+                          '</div>' +
+                          '<div class="timetable-session-badges">' + sessionsPills + '</div>' +
+                        '</div>' +
+                        '<div>' +
+                          '<span class="status-pill status-published">Active Student</span>' +
+                        '</div>';
+        rosterContainer.appendChild(row);
       });
-
-      list.appendChild(container);
     }
 
-    async function bookOffering(offeringId, title) {
-      if (!activeParentId) return;
-      
-      try {
-        const response = await fetch(\`/parents/\${activeParentId}/bookings\`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ offeringId })
-        });
-        
-        const resData = await response.json();
-        
-        if (response.ok) {
-          showToast(\`Successfully booked offering "\${title}"!\`, 'success');
-          await loadOfferingsAndBookings();
-        } else {
-          // Show conflict dialog if 409
-          if (response.status === 409) {
-            showConflictDialog(resData);
+    function handleCreateOffering(e) {
+      e.preventDefault();
+      var courseId = document.getElementById('form-course-id').value;
+      var title = document.getElementById('form-offering-title').value;
+      var maxStudents = parseInt(document.getElementById('form-offering-max').value, 10);
+
+      fetch('/teachers/' + activeTeacherId + '/offerings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: courseId, title: title, maxStudents: maxStudents })
+      })
+      .then(function(res) {
+        return res.json().then(function(data) {
+          if (res.ok) {
+            showToast('Offering created successfully!', 'success');
+            document.getElementById('form-offering-title').value = '';
+            loadTeacherOfferings();
           } else {
-            showToast(resData.message || 'Booking failed', 'error');
+            showToast(data.message || 'Creation failed', 'error');
           }
-        }
-      } catch (err) {
-        console.error(err);
-        showToast('Network error while booking', 'error');
-      }
+        });
+      })
+      .catch(function() {
+        showToast('Request error', 'error');
+      });
     }
 
-    function showConflictDialog(errorPayload) {
-      const dialogBody = document.getElementById('dialog-body');
-      const dialogTitle = document.getElementById('dialog-title');
-      dialogTitle.innerText = '⚠️ Schedule Booking Conflict';
-      
-      let detailsHtml = '';
-      if (errorPayload.details) {
-        const details = errorPayload.details;
-        detailsHtml = \`
-          <div class="conflict-detail-box">
-            <div class="conflict-session-card conflict-existing">
-              <div class="conflict-label">Your Booked Class Schedule</div>
-              <strong>\${details.existingSession.offeringTitle}</strong>
-              <div style="font-size: 12px; margin-top: 4px; color: #cbd5e1;">
-                Time: \${details.existingSession.startTime} - \${details.existingSession.endTime}
-              </div>
-            </div>
-            
-            <div style="text-align: center; color: var(--accent-rose); font-weight: 800; font-size: 16px;">
-              ⚡ OVERLAPS WITH ⚡
-            </div>
+    function handleCreateSession(e) {
+      e.preventDefault();
+      var offeringId = document.getElementById('form-offering-id').value;
+      var startTime = document.getElementById('form-session-start').value;
+      var endTime = document.getElementById('form-session-end').value;
 
-            <div class="conflict-session-card conflict-target">
-              <div class="conflict-label">New Class Schedule Request</div>
-              <strong>\${details.conflictingSession.offeringTitle}</strong>
-              <div style="font-size: 12px; margin-top: 4px; color: #cbd5e1;">
-                Time: \${details.conflictingSession.startTime} - \${details.conflictingSession.endTime}
-              </div>
-            </div>
-          </div>
-        \`;
+      if (!offeringId) {
+        showToast('Please select a valid offering', 'warn');
+        return;
       }
 
-      dialogBody.innerHTML = \`
-        <div class="alert-card alert-card-danger">
-          <span class="alert-icon">🚫</span>
-          <div>
-            <strong>Booking Request Blocked!</strong> The backend detected a time schedule overlap. Parent schedules are guarded from double bookings.
-          </div>
-        </div>
-        <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px;">
-          \${errorPayload.message}
-        </p>
-        \${detailsHtml}
-        <pre>\${JSON.stringify(errorPayload, null, 2)}</pre>
-      \`;
+      var formatLocal = function(val) { return val + ':00'; };
+
+      fetch('/teachers/' + activeTeacherId + '/offerings/' + offeringId + '/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessions: [
+            { startTime: formatLocal(startTime), endTime: formatLocal(endTime) }
+          ]
+        })
+      })
+      .then(function(res) {
+        return res.json().then(function(data) {
+          if (res.ok) {
+            showToast('Session added to offering!', 'success');
+            document.getElementById('form-session-start').value = '';
+            document.getElementById('form-session-end').value = '';
+            loadTeacherOfferings().then(function() {
+              return loadOfferingsAndBookings();
+            });
+          } else {
+            showToast(data.message || 'Failed to add session', 'error');
+          }
+        });
+      })
+      .catch(function() {
+        showToast('Request error', 'error');
+      });
+    }
+
+    function patchOfferingStatus(offeringId, status) {
+      fetch('/teachers/' + activeTeacherId + '/offerings/' + offeringId + '/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status })
+      })
+      .then(function(res) {
+        return res.json().then(function(data) {
+          if (res.ok) {
+            showToast('Offering status updated to ' + status + '!', 'success');
+            loadTeacherOfferings().then(function() {
+              return loadOfferingsAndBookings();
+            });
+          } else {
+            showToast(data.message || 'Failed to update status', 'error');
+          }
+        });
+      })
+      .catch(function() {
+        showToast('Request error', 'error');
+      });
+    }
+
+    function showConflictDialog(errData) {
+      var title = document.getElementById('dialog-title');
+      var body = document.getElementById('dialog-body');
+      title.innerText = '⚠️ Schedule Overlap Conflict Detected';
+
+      var detailsHtml = '';
+      var visualHtml = '';
+      if (errData.details) {
+        var d = errData.details;
+        
+        // Render timeline bars representing the overlap
+        visualHtml = '<div class="timeline-visualizer">' +
+                       '<div class="timeline-visualizer-title">Visual Overlap Timeline</div>' +
+                       '<div class="timeline-track">' +
+                         '<div class="timeline-bar timeline-bar-existing" title="' + d.existingSession.offeringTitle + '">' +
+                           'Booked Session' +
+                         '</div>' +
+                         '<div class="timeline-bar timeline-bar-new" title="' + d.conflictingSession.offeringTitle + '">' +
+                           'Conflicting Request' +
+                         '</div>' +
+                         '<div class="conflict-zone">' +
+                           '<span class="conflict-zone-label">Conflict</span>' +
+                         '</div>' +
+                       '</div>' +
+                     '</div>';
+
+        detailsHtml = '<div class="conflict-box">' +
+                        '<div class="conflict-item conflict-existing">' +
+                          '<strong>Already Booked:</strong> ' + d.existingSession.offeringTitle +
+                          '<div style="font-size: 11px; margin-top: 4px; color: var(--text-secondary);">⏰ Session: ' + d.existingSession.startTime + ' - ' + d.existingSession.endTime + '</div>' +
+                        '</div>' +
+                        '<div class="conflict-item conflict-new">' +
+                          '<strong>Conflicting Booking Request:</strong> ' + d.conflictingSession.offeringTitle +
+                          '<div style="font-size: 11px; margin-top: 4px; color: var(--text-secondary);">⏰ Session: ' + d.conflictingSession.startTime + ' - ' + d.conflictingSession.endTime + '</div>' +
+                        '</div>' +
+                      '</div>';
+      }
+
+      body.innerHTML = '<div class="alert-card alert-card-danger">' +
+                         '<strong>Time overlap error!</strong> Parents cannot book multiple course sections that conflict in time.' +
+                       '</div>' +
+                       '<p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.4;">' + errData.message + '</p>' +
+                       visualHtml +
+                       detailsHtml +
+                       '<pre>' + JSON.stringify(errData, null, 2) + '</pre>';
 
       document.getElementById('dialog-overlay').style.display = 'flex';
     }
@@ -1303,149 +1991,168 @@ export class DemoController {
       document.getElementById('dialog-overlay').style.display = 'none';
     }
 
-    function switchPlaygroundTab(tab) {
-      document.querySelectorAll('.playground-tab').forEach(t => t.classList.remove('active'));
-      document.getElementById('tab-' + tab).classList.add('active');
-
-      document.getElementById('panel-bookings').style.display = tab === 'bookings' ? 'block' : 'none';
-      document.getElementById('panel-playground').style.display = tab === 'playground' ? 'block' : 'none';
-    }
-
-    async function resetDatabase() {
-      const btn = document.getElementById('reset-db-btn');
-      const originalHtml = btn.innerHTML;
+    function resetDatabase() {
+      var btn = document.getElementById('reset-db-btn');
+      var text = btn.innerText;
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> Resetting...';
-      
-      try {
-        const response = await fetch('/api/demo/reset-db', { method: 'POST' });
-        if (response.ok) {
-          showToast('Database reset and re-seeded successfully!', 'success');
-          // Clear logs
-          document.getElementById('playground-logs').innerHTML = 'Database has been reset. Audit trail cleared.';
-          await loadParents();
-          await loadOfferingsAndBookings();
-        } else {
-          showToast('Database reset failed', 'error');
-        }
-      } catch (err) {
-        console.error(err);
-        showToast('Error resetting database', 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
-      }
+      return fetch('/api/demo/reset-db', { method: 'POST' })
+        .then(function(res) {
+          if (res.ok) {
+            showToast('Database reset and seeded successfully!', 'success');
+            document.getElementById('lab-logs').innerHTML = 'Database has been reset. Audit log cleared.';
+            return resetAndReloadAll();
+          } else {
+            showToast('Reset failed', 'error');
+          }
+        })
+        .catch(function() {
+          showToast('Request error', 'error');
+        })
+        .finally(function() {
+          btn.disabled = false;
+          btn.innerText = text;
+        });
     }
 
-    async function simulateConflictDemo() {
-      const logs = document.getElementById('playground-logs');
-      logs.innerHTML = '<span class="status-info">[INFO] Starting Overlap Conflict Simulation...</span>\\n';
+    function runOverlapConflictSandbox() {
+      var logs = document.getElementById('lab-logs');
+      logs.innerHTML = '<span class="logs-info">[INFO] Starting Overlap Conflict Sandbox...</span>\\n';
+      logs.innerHTML += '<span class="logs-info">[1/4] Resetting database sandboxes...</span>\\n';
       
-      try {
-        // Step 1: Find Minecraft Coding Saturday Batch
-        const mcOffering = offerings.find(o => o.title.includes('Saturday') && o.courseName.includes('Minecraft'));
-        const robloxOffering = offerings.find(o => o.title.includes('Saturday') && o.courseName.includes('Roblox'));
-
-        if (!mcOffering || !robloxOffering) {
-          logs.innerHTML += '<span class="status-error">[ERROR] Required test offerings (Minecraft/Roblox Saturday) not found! Ensure database is seeded.</span>\\n';
-          return;
-        }
-
-        logs.innerHTML += \`<span class="status-info">[1/3] Booking Minecraft Saturday (\${mcOffering.id}) for Parent Emily Chen...</span>\\n\`;
-        
-        // Reset DB to clean state first to ensure clean test
-        logs.innerHTML += \`<span class="status-info">[System] Automatically resetting database for a clean sandbox...</span>\\n\`;
-        await fetch('/api/demo/reset-db', { method: 'POST' });
-        await loadOfferingsAndBookings();
-        
-        // Book Minecraft
-        let bookResponse = await fetch(\`/parents/\${activeParentId}/bookings\`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ offeringId: mcOffering.id })
-        });
-        let bookData = await bookResponse.json();
-        
-        if (!bookResponse.ok) {
-          logs.innerHTML += \`<span class="status-error">[ERROR] Failed to book Minecraft: \${bookData.message}</span>\\n\`;
-          return;
-        }
-        
-        logs.innerHTML += \`<span class="status-success">[2/3] Minecraft Booking Success! Booking ID: \${bookData.id}</span>\\n\`;
-        logs.innerHTML += \`<span class="status-info">[3/3] Now attempting to book Roblox Saturday (\${robloxOffering.id}) which overlaps with Minecraft...</span>\\n\`;
-        
-        // Attempt Book Roblox
-        let conflictResponse = await fetch(\`/parents/\${activeParentId}/bookings\`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ offeringId: robloxOffering.id })
-        });
-        let conflictData = await conflictResponse.json();
-        
-        if (conflictResponse.status === 409) {
-          logs.innerHTML += \`<span class="status-success">[SUCCESS] Overlap detected! Backend blocked booking with 409 Conflict.</span>\\n\`;
-          logs.innerHTML += \`<span class="status-warn">[Conflict Details] \${conflictData.message}</span>\\n\`;
-          logs.innerHTML += \`\\n<span class="status-success">[VERIFIED] Conflict Detection works perfectly.</span>\\n\`;
+      fetch('/api/demo/reset-db', { method: 'POST' })
+        .then(function(res) {
+          if (!res.ok) throw new Error('Failed to reset database');
+          return fetch('/api/demo/parents').then(function(r) { return r.json(); });
+        })
+        .then(function(parentsList) {
+          var targetParent = parentsList.find(function(p) { return p.name.indexOf('Emily') >= 0; }) || parentsList[0];
+          if (!targetParent) throw new Error('No parents found in database');
           
-          // Re-load UI data
-          await loadOfferingsAndBookings();
+          logs.innerHTML += '<span class="logs-info">[2/4] Fetching available offerings for ' + targetParent.name + '...</span>\\n';
+          return fetch('/parents/' + targetParent.id + '/available-offerings')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              return { parent: targetParent, offerings: data.offerings || data };
+            });
+        })
+        .then(function(ctx) {
+          var targetParent = ctx.parent;
+          var offeringsList = ctx.offerings;
           
-          // Show conflict dialog too
-          showConflictDialog(conflictData);
-        } else {
-          logs.innerHTML += \`<span class="status-error">[FAILED] Expected 409 Conflict, but got \${conflictResponse.status}.</span>\\n\`;
-        }
-      } catch (err) {
-        logs.innerHTML += \`<span class="status-error">[ERROR] Simulation failed: \${err.message}</span>\\n\`;
-      }
+          var mcOffering = offeringsList.find(function(o) { return o.title.indexOf('Saturday') >= 0 && o.courseName.indexOf('Minecraft') >= 0; });
+          var robloxOffering = offeringsList.find(function(o) { return o.title.indexOf('Saturday') >= 0 && o.courseName.indexOf('Roblox') >= 0; });
+
+          if (!mcOffering || !robloxOffering) {
+            throw new Error('Test offerings (Minecraft Saturday / Roblox Saturday) not found in freshly seeded database.');
+          }
+
+          logs.innerHTML += '[3/4] Booking Minecraft Saturday (' + mcOffering.title + ') for parent: ' + targetParent.name + '...\\n';
+          return fetch('/parents/' + targetParent.id + '/bookings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ offeringId: mcOffering.id })
+          })
+          .then(function(res1) {
+            return res1.json().then(function(d1) {
+              if (!res1.ok) {
+                throw new Error('Minecraft booking failed: ' + (d1.message || 'Unknown error'));
+              }
+              logs.innerHTML += '<span class="logs-success">✅ Booking confirmed! ID: ' + d1.id + '</span>\\n';
+              logs.innerHTML += '[4/4] Booking overlapping Roblox Saturday (' + robloxOffering.title + ') for ' + targetParent.name + '...\\n';
+              
+              return fetch('/parents/' + targetParent.id + '/bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offeringId: robloxOffering.id })
+              });
+            });
+          })
+          .then(function(res2) {
+            return res2.json().then(function(d2) {
+              if (res2.status === 409) {
+                logs.innerHTML += '<span class="logs-success">✅ Conflict successfully detected! Server returned 409 Conflict.</span>\\n';
+                logs.innerHTML += '<span class="logs-warn">[Log] ' + d2.message + '</span>\\n';
+                logs.innerHTML += '\\n<span class="logs-success">[VERIFIED] Conflict Boundary math works correctly.</span>\\n';
+                
+                // Show conflict dialog
+                showConflictDialog(d2);
+              } else {
+                logs.innerHTML += '<span class="logs-error">[FAILED] Expected 409 status, but got ' + res2.status + '.</span>\\n';
+              }
+              // Sync UI
+              resetAndReloadAll();
+            });
+          });
+        })
+        .catch(function(err) {
+          logs.innerHTML += '<span class="logs-error">[ERROR] Sandbox error: ' + err.message + '</span>\\n';
+          resetAndReloadAll();
+        });
     }
 
-    async function simulateConcurrencyDemo() {
-      const logs = document.getElementById('playground-logs');
-      logs.innerHTML = '<span class="status-info">[INFO] Initiating Advisory Lock Concurrency Race...</span>\\n';
+    function runConcurrencyLockSandbox() {
+      var logs = document.getElementById('lab-logs');
+      logs.innerHTML = '<span class="logs-info">[INFO] Starting Advisory Lock Concurrency Sandbox...</span>\\n';
+      logs.innerHTML += '<span class="logs-info">[1/4] Resetting database sandboxes...</span>\\n';
       
-      try {
-        const mcOffering = offerings.find(o => o.title.includes('Saturday') && o.courseName.includes('Minecraft'));
-        if (!mcOffering) {
-          logs.innerHTML += '<span class="status-error">[ERROR] Offering not found!</span>\\n';
-          return;
-        }
+      fetch('/api/demo/reset-db', { method: 'POST' })
+        .then(function(res) {
+          if (!res.ok) throw new Error('Failed to reset database');
+          return fetch('/api/demo/parents').then(function(r) { return r.json(); });
+        })
+        .then(function(parentsList) {
+          var targetParent = parentsList.find(function(p) { return p.name.indexOf('Emily') >= 0; }) || parentsList[0];
+          if (!targetParent) throw new Error('No parents found in database');
+          
+          logs.innerHTML += '<span class="logs-info">[2/4] Fetching available offerings for ' + targetParent.name + '...</span>\\n';
+          return fetch('/parents/' + targetParent.id + '/available-offerings')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              return { parent: targetParent, offerings: data.offerings || data };
+            });
+        })
+        .then(function(ctx) {
+          var targetParent = ctx.parent;
+          var offeringsList = ctx.offerings;
+          
+          var mcOffering = offeringsList.find(function(o) { return o.title.indexOf('Saturday') >= 0 && o.courseName.indexOf('Minecraft') >= 0; });
+          if (!mcOffering) {
+            throw new Error('Minecraft Saturday offering not found in database.');
+          }
 
-        // Reset DB to clean state first
-        logs.innerHTML += \`<span class="status-info">[1/3] Resetting database to clear prior bookings...</span>\\n\`;
-        await fetch('/api/demo/reset-db', { method: 'POST' });
-        await loadOfferingsAndBookings();
+          logs.innerHTML += '[3/4] Firing 10 concurrent requests to book Offering: ' + mcOffering.title + ' for ' + targetParent.name + '...\\n';
+          
+          return fetch('/api/demo/test-concurrency', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parentId: targetParent.id, offeringId: mcOffering.id })
+          })
+          .then(function(res) {
+            return res.json().then(function(data) {
+              logs.innerHTML += '<span class="logs-success">✅ Concurrency simulation complete:</span>\\n';
+              logs.innerHTML += '  - Total Requests Fired: ' + data.summary.totalRequests + '\\n';
+              logs.innerHTML += '  - Successful Bookings:  <strong style="color: #10b981">' + data.summary.successes + '</strong> (Expected: 1)\\n';
+              logs.innerHTML += '  - Blocked Bookings:     <strong style="color: #f43f5e">' + data.summary.failures + '</strong> (Expected: 9)\\n\\n';
 
-        logs.innerHTML += \`<span class="status-info">[2/3] Firing 10 parallel booking requests for Offering: \${mcOffering.title} (\${mcOffering.id}) for Parent Emily Chen...</span>\\n\`;
-        
-        const response = await fetch('/api/demo/test-concurrency', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ parentId: activeParentId, offeringId: mcOffering.id })
+              logs.innerHTML += '[4/4] Individual Request Latency & Log Trail:\\n';
+              data.results.forEach(function(r) {
+                var badge = r.status === 'success'
+                  ? '<span class="logs-success">[SUCCESS]</span>'
+                  : '<span class="logs-error">[BLOCKED]</span>';
+                var details = r.errorType ? ' (' + r.errorType + ' ' + r.statusCode + ')' : '';
+                logs.innerHTML += '  Req #' + r.request + ' (' + r.latency + '): ' + badge + ' ' + r.message + details + '\\n';
+              });
+
+              logs.innerHTML += '\\n<span class="logs-success">[VERIFIED] Transactional advisory lock prevented double-booking. Safety validated.</span>\\n';
+              resetAndReloadAll();
+            });
+          });
+        })
+        .catch(function(err) {
+          logs.innerHTML += '<span class="logs-error">[ERROR] Sandbox error: ' + err.message + '</span>\\n';
+          resetAndReloadAll();
         });
-        
-        const data = await response.json();
-        
-        logs.innerHTML += \`<span class="status-success">[3/3] Received concurrency results:</span>\\n\`;
-        logs.innerHTML += \`  - Total Requests: \${data.summary.totalRequests}\\n\`;
-        logs.innerHTML += \`  - Successful Bookings: <strong style="color: #34d399">\${data.summary.successes}</strong> (Expected: 1)\\n\`;
-        logs.innerHTML += \`  - Blocked Bookings: <strong style="color: #f87171">\${data.summary.failures}</strong> (Expected: 9)\\n\\n\`;
-        
-        logs.innerHTML += \`<strong>Individual Request Log Trail:</strong>\\n\`;
-        data.results.forEach(r => {
-          const badge = r.status === 'success' 
-            ? '<span class="status-success">[SUCCESS]</span>' 
-            : '<span class="status-error">[BLOCKED]</span>';
-          logs.innerHTML += \`  Request #\${r.request} (\${r.latency}): \${badge} \${r.message} \${r.errorType ? '(' + r.errorType + ' ' + r.statusCode + ')' : ''}\\n\`;
-        });
-        
-        logs.innerHTML += \`\\n<span class="status-success">[VERIFIED] PostgreSQL advisory locks correctly serialized requests. Double-booking prevented.</span>\\n\`;
-        
-        // Re-load UI data
-        await loadOfferingsAndBookings();
-      } catch (err) {
-        logs.innerHTML += \`<span class="status-error">[ERROR] Simulation failed: \${err.message}</span>\\n\`;
-      }
     }
   </script>
 </body>

@@ -20,7 +20,11 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect((res) => {
+        if (!res.text.includes('Verification Dashboard')) {
+          throw new Error('Expected response to contain "Verification Dashboard"');
+        }
+      });
   });
 
   afterEach(async () => {

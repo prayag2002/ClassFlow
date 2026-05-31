@@ -25,7 +25,7 @@ Before testing, ensure you have:
 
 ## 1. Interactive Web Dashboard (Visual Testing)
 
-An interactive Single-Page Application (SPA) dashboard is served directly by the backend. It lets you test the system visually without configuring API clients or copying UUIDs.
+An interactive Single-Page Application (SPA) dashboard is served directly by the backend at the root path (`/`). It is designed in a clean, professional **light mode** theme. It provides a visual playground to test and verify both Teacher and Parent APIs across timezones.
 
 ### Steps to Run:
 1. Seed the database with sample data:
@@ -41,12 +41,22 @@ An interactive Single-Page Application (SPA) dashboard is served directly by the
    http://localhost:3000/
    ```
 
-### What You Can Test in the Dashboard:
-* **Timezone Conversions**: Switch between the active parents in the left sidebar (**Emily Chen** in Tokyo JST and **Michael Brown** in London GMT). Notice how the session times for the classes under "Available Course Offerings" automatically shift to match the selected parent's timezone.
-* **Booking Offerings**: Click **"Book Offering"** on any available class. The booking is confirmed instantly, slots are decremented, and the class is added to the **"My Confirmed Bookings"** tab.
-* **Conflict Detection**: Book **"Minecraft Coding - Saturday Batch"** for Emily Chen, then attempt to book **"Roblox Game Design - Saturday Batch"**. The dashboard will display a red alert card showing the overlapping sessions, along with the raw 409 Conflict JSON response from the server.
-* **Concurrency & Lock Safety**: Switch to the **"Interactive Conflict & Concurrency Laboratory"** tab and click **"Test Concurrency & Advisory Lock Safety"**. This triggers 10 parallel booking requests to the server at the exact same millisecond. The audit trail logs show that the first request succeeds while the other 9 are serialized and rejected with a 409 conflict, demonstrating active advisory lock protection.
-* **Reset Database**: Click the red **"Reset Database (Seed)"** button in the header at any time to clear bookings and return the data to its initial pristine state.
+### Tabs & Functional Portals:
+
+#### A. Parents Booking Portal
+* **Active Parent Selection**: Switch between **Emily Chen (Tokyo JST)** and **Michael Brown (London GMT)**. Notice how available class session times automatically shift to display in their local timezone.
+* **Book Classes**: Book any available batch with a single click. The capacity slots decrement atomically, and the class appears in the parent's "Confirmed Bookings" section in their local timezone.
+* **Overlap Alert Dialog**: Try booking overlapping classes. The backend blocks it with a `409 Conflict` and displays a detailed conflict dialog showing the specific booked session and the conflicting session that caused the overlap.
+
+#### B. Teachers Management Portal
+* **Active Teacher Selection**: Switch between **Sarah Johnson (New York EST)** and **Raj Patel (India IST)**.
+* **Create Offering**: Create a new class batch (starts in DRAFT status) selecting from the available courses.
+* **Add Sessions**: Add weekly sessions to any class batch. Select dates and times in the teacher's local timezone. The backend automatically translates these to UTC before database insertion.
+* **Publish/Cancel Offerings**: Change offering status. DRAFT offerings are not visible to parents until they have at least one session and are published.
+
+#### C. Lock Safety & Conflict Lab (Verification Sandbox)
+* **Verify Overlap Conflict Detection**: Resets the database and attempts to book overlapping sessions. Validates that the backend math catches overlaps and throws a 409 status with conflict details.
+* **Verify Concurrency & Advisory Lock Safety**: Resets the database and fires 10 parallel booking requests at the same millisecond for a parent. Validates that the advisory lock successfully serializes them, resulting in exactly 1 successful booking and 9 blocked requests (failures due to either advisory locks or serializable transaction boundaries).
 
 ---
 
@@ -82,18 +92,6 @@ Swagger UI is configured to provide an interactive interface to execute raw API 
    http://localhost:3000/api/docs
    ```
 
-### How to Test Endpoint Flows:
-1. Run `npm run seed` to print the UUIDs for Teachers, Offerings, and Parents to your console.
-2. Use the **Parent APIs** section in Swagger:
-   * **Get Available Offerings**: `GET /parents/{parentId}/available-offerings` using a parent's UUID.
-   * **Book an Offering**: `POST /parents/{parentId}/bookings` with the payload:
-     ```json
-     {
-       "offeringId": "OFFERING-UUID-HERE"
-     }
-     ```
-   * **Get Booked Classes**: `GET /parents/{parentId}/bookings` to view confirmed bookings.
-
 ---
 
 ## 4. Automated Jest Test Suite
@@ -109,4 +107,4 @@ npm run test
 ```bash
 npm run test:cov
 ```
-This will output a code coverage report confirming the integrity of the timezone conversions and schedule overlap algorithms.
+The Jest configuration is refined to exclude boilerplate code (entities, DTOs, modules, seeder/runner scripts), generating a clean, high-coverage report focusing exclusively on services and business logic algorithms.
