@@ -2,6 +2,11 @@
 
 A production-ready backend service for a global live-learning platform where teachers create course offerings with sessions, and parents book them across timezones — with full concurrency safety and conflict detection.
 
+## Documentation and Manuals
+
+* **[Architecture Decision Log](DECISION.md)**: Details the rationale for choosing NestJS (TypeScript/Node.js) over Spring Boot (Java) for this implementation.
+* **[Testing and Verification Manual](TESTING_MANUAL.md)**: Detailed instructions on running the Jest test suite, the CLI automated verification script, and navigating the web-based verification dashboard.
+
 ## Key Features
 
 - **Full Timezone Support** — Teachers create sessions in their local timezone, parents view in theirs. All stored as UTC internally.
@@ -161,6 +166,9 @@ Prevents phantom reads: if another transaction inserts a conflicting booking bet
 Two sessions overlap if: A.startTime < B.endTime AND A.endTime > B.startTime
 ```
 Back-to-back sessions (A.end === B.start) do NOT conflict.
+
+### 5. Framework Choice: NestJS over Spring Boot
+I chose NestJS (TypeScript/Node.js) over Spring Boot (Java). NestJS mirrors Spring Boot's modular architecture (Controllers, Services, Modules) and Dependency Injection features, providing the same enterprise-level code organization. However, NestJS offers higher development velocity, a single-language ecosystem (enabling the backend, frontend dashboard, and scripting all to be written in TypeScript), and an asynchronous non-blocking runtime that is highly efficient for concurrent I/O-bound operations like scheduling and booking. For a deeper breakdown of the decision, see **[DECISION.md](DECISION.md)**.
 
 ## Project Structure
 
