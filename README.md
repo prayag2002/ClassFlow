@@ -1,17 +1,28 @@
-# 🎓 Global Class Offering Booking System
+# Global Class Offering Booking System
 
 A production-ready backend service for a global live-learning platform where teachers create course offerings with sessions, and parents book them across timezones — with full concurrency safety and conflict detection.
 
-## ✨ Key Features
+## Key Features
 
-- **🌍 Full Timezone Support** — Teachers create sessions in their local timezone, parents view in theirs. All stored as UTC internally.
-- **🔒 Concurrent Booking Safety** — PostgreSQL advisory locks (per-parent) + SERIALIZABLE transactions prevent race conditions.
-- **⏰ Time Conflict Detection** — Prevents parents from booking overlapping sessions with detailed conflict error responses.
-- **📊 Capacity Management** — Max students per offering with atomic enforcement.
-- **📖 Interactive API Docs** — Swagger UI at `/api/docs` for instant testing.
-- **✅ Comprehensive Tests** — Unit tests for conflict detection and timezone conversion.
+- **Full Timezone Support** — Teachers create sessions in their local timezone, parents view in theirs. All stored as UTC internally.
+- **Concurrent Booking Safety** — PostgreSQL advisory locks (per-parent) + SERIALIZABLE transactions prevent race conditions.
+- **Time Conflict Detection** — Prevents parents from booking overlapping sessions with detailed conflict error responses.
+- **Capacity Management** — Max students per offering with atomic enforcement.
+- **Interactive API Docs** — Swagger UI at `/api/docs` for instant testing.
+- **Comprehensive Tests** — Unit tests for conflict detection and timezone conversion.
+- **Verification Dashboard** — Single-page UI at `/` for real-time validation of booking rules, time zones, and concurrency locks.
 
-## 🏗️ Architecture
+## Verification Dashboard
+
+An interactive Single-Page Application is served directly at the root path (`/`) to simplify testing and verification of the system's boundary conditions:
+
+- **Parents Booking Portal**: Switch active parent profiles (e.g., Tokyo vs London) to see schedules dynamically translated to their local timezone. Test slot limits, book classes, and check for overlap conflict alerts.
+- **Teachers Management Portal**: Create course offerings, add sessions (local teacher timezone), publish drafts, and view real-time student booking rosters.
+- **Lock Safety & Conflict Laboratory**: Trigger sandboxes to audit the backend response parameters:
+  - *Conflict Detection Sandbox*: Attempts overlapping bookings and validates the 409 Conflict response containing the overlapping session details and a visual timeline diagram.
+  - *Concurrency Safety Sandbox*: Fires 10 concurrent requests at the exact same millisecond for a single parent to verify the advisory lock guarantees exactly 1 success and 9 grace-blocked requests.
+
+## Architecture
 
 ```
 NestJS (TypeScript) → TypeORM → PostgreSQL
@@ -30,7 +41,7 @@ Parent B books offering → Different lock key → Proceeds independently
 Parent A fires 2 requests → Same lock key → Serialized, one at a time
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -85,7 +96,7 @@ npm run start:dev
 The server runs at `http://localhost:3000`
 Swagger API docs at `http://localhost:3000/api/docs`
 
-## 📚 API Reference
+## API Reference
 
 ### Teacher APIs
 
@@ -111,7 +122,7 @@ Swagger API docs at `http://localhost:3000/api/docs`
 | `GET` | `/courses` | List all courses |
 | `POST` | `/courses` | Create a course |
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run unit tests
@@ -126,7 +137,7 @@ npm run test:cov
 - **Timezone Service** — UTC conversions, round-trips, cross-timezone display, edge cases
 - **Conflict Detection** — Overlapping sessions, boundary cases, assignment scenarios, midnight crossings
 
-## 🔍 Key Design Decisions
+## Key Design Decisions
 
 ### 1. UTC Storage
 All timestamps stored as `TIMESTAMP WITH TIME ZONE` in UTC. Timezone conversion happens only at the API boundary via `TimezoneService`. This means:
@@ -151,7 +162,7 @@ Two sessions overlap if: A.startTime < B.endTime AND A.endTime > B.startTime
 ```
 Back-to-back sessions (A.end === B.start) do NOT conflict.
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 src/
@@ -190,7 +201,7 @@ src/
     └── seed.ts                      # Realistic demo data
 ```
 
-## 🔧 Tech Stack
+## Tech Stack
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
